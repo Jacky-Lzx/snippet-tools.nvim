@@ -1,7 +1,7 @@
 local api = vim.api
 local M = {}
 local ns = api.nvim_create_namespace("snippet-tools")
-local stacks, attached, tickets = {}, {}, {}
+local stacks, attached, tickets, marks = {}, {}, {}, {}
 local serial, mutating = 0, false
 local fold_locks = {}
 local sync
@@ -48,7 +48,7 @@ local function top(buf)
   local stack = stacks[buf or api.nvim_get_current_buf()] or {}
   return stack[#stack]
 end
-local function range(session, record, bounds)
+local function range(session, record, bounds, mark)
   if
     record.dead
     or not record.mark
@@ -57,7 +57,7 @@ local function range(session, record, bounds)
   then
     return
   end
-  local mark = api.nvim_buf_get_extmark_by_id(session.buf, ns, record.mark, { details = true })
+  mark = mark or api.nvim_buf_get_extmark_by_id(session.buf, ns, record.mark, { details = true })
   if #mark == 0 then
     return
   end
@@ -109,6 +109,16 @@ local function setmark(session, record, a, b, left, right)
       or (record.key and record.kind ~= "mirror" and "SnippetToolsPlaceholder" or nil),
     priority = record == session.current and 130 or 120,
   })
+  marks[session.buf] = marks[session.buf] or {}
+  marks[session.buf][record.mark], record.owner = record, session
+end
+local function delmark(session, record)
+  if record.mark then
+    api.nvim_buf_del_extmark(session.buf, ns, record.mark)
+    if marks[session.buf] then
+      marks[session.buf][record.mark] = nil
+    end
+  end
 end
 local function each_record(buf, fn)
   for _, session in ipairs(stacks[buf] or {}) do
@@ -120,37 +130,60 @@ local function each_record(buf, fn)
     end
   end
 end
-local function gravity(session, target)
-  -- No buffer text changes while gravity is assigned. Share bounds/line reads
-  -- only for this synchronous pass; never keep them across edits or callbacks.
+local function assign_gravity(session, target, start, finish, owner, record, a, b)
+  local left, right = false, true
+  if owner == session and descendant(target, record) then
+    left, right = false, true
+  elseif le(b, start) and not (equal(b, start) and record.rank > target.rank) then
+    left, right = false, false
+  elseif le(finish, a) then
+    left, right = true, true
+  end
+  if
+    record.left_gravity ~= left
+    or record.right_gravity ~= right
+    or record.highlight_active ~= (record == owner.current)
+  then
+    setmark(owner, record, a, b, left, right)
+  end
+end
+local function gravity(session, target, start, finish, edit)
+  -- Bounds are shared only during this synchronous pass, never across edits.
   local bounds = { valid = api.nvim_buf_is_valid(session.buf), lines = {} }
   if bounds.valid then
     bounds.count = api.nvim_buf_line_count(session.buf)
   end
-  local start, finish = range(session, target, bounds)
+  if not start then
+    start, finish = range(session, target, bounds)
+  end
   if not start then
     return
   end
-  each_record(session.buf, function(owner, record)
-    local a, b = range(owner, record, bounds)
-    if a then
-      local left, right = false, true
-      if owner == session and descendant(target, record) then
-        left, right = false, true
-      elseif le(b, start) and not (equal(b, start) and record.rank > target.rank) then
-        left, right = false, false
-      elseif le(finish, a) then
-        left, right = true, true
-      end
-      if
-        record.left_gravity ~= left
-        or record.right_gravity ~= right
-        or record.highlight_active ~= (record == owner.current)
-      then
-        setmark(owner, record, a, b, left, right)
+  if edit then
+    -- A replacement only moves endpoints inside or touching its range. Marks
+    -- elsewhere need no gravity adjustment until the active field is restored.
+    -- overlap=true includes ancestors and ranges ending at the start boundary.
+    local index = marks[session.buf] or {}
+    for _, mark in
+      ipairs(api.nvim_buf_get_extmarks(session.buf, ns, start, finish, { details = true, overlap = true }))
+    do
+      local record = index[mark[1]]
+      if record then
+        local owner = record.owner
+        local a, b = range(owner, record, bounds, { mark[2], mark[3], mark[4] })
+        if a then
+          assign_gravity(session, target, start, finish, owner, record, a, b)
+        end
       end
     end
-  end)
+  else
+    each_record(session.buf, function(owner, record)
+      local a, b = range(owner, record, bounds)
+      if a then
+        assign_gravity(session, target, start, finish, owner, record, a, b)
+      end
+    end)
+  end
 end
 
 local function position(text, offset, origin)
@@ -221,6 +254,7 @@ local function options(session, scope, order)
   }
 end
 local function install(session, model, origin, parent)
+  session.navigation, session.synced_tick = nil, nil
   for _, record in ipairs(model.records) do
     -- Literal text cannot be edited or recomputed independently. Its enclosing
     -- placeholder/root already tracks it; an extra extmark only adds work.
@@ -274,10 +308,21 @@ local function install(session, model, origin, parent)
     record.rank = i
   end
 end
-local function arguments(session, record)
+local function group_text(session, key, values)
+  local value = values and values[key]
+  if value == nil then
+    local record = session.groups[key]
+    value = record and contents(session, record) or ""
+    if values then
+      values[key] = value
+    end
+  end
+  return value
+end
+local function arguments(session, record, values)
   local args = {}
   for i, dep in ipairs(record.node.deps or {}) do
-    args[i] = contents(session, session.groups[record.scope .. "/" .. dep] or {}) or ""
+    args[i] = group_text(session, record.scope .. "/" .. dep, values)
   end
   return args
 end
@@ -297,7 +342,8 @@ local function remove_children(session, parent)
   for _, record in ipairs(session.records) do
     if record ~= parent and not record.dead and descendant(record, parent) then
       record.dead = true
-      api.nvim_buf_del_extmark(session.buf, ns, record.mark)
+      session.navigation, session.synced_tick = nil, nil
+      delmark(session, record)
       if session.groups[record.key] == record then
         session.groups[record.key] = nil
       end
@@ -307,7 +353,7 @@ end
 local function replace(session, record, text)
   local a, b = range(session, record)
   assert(a, "snippet-tools: target no longer exists")
-  gravity(session, record)
+  gravity(session, record, a, b, true)
   pcall(vim.cmd, "undojoin")
   mutating = true
   local ok, err =
@@ -321,6 +367,9 @@ local function replace(session, record, text)
 end
 
 local function navigation(session)
+  if session.navigation then
+    return session.navigation
+  end
   local result = {}
   for _, record in pairs(session.groups) do
     if not record.dead and record.kind ~= "dynamic" then
@@ -341,6 +390,7 @@ local function navigation(session)
     end
     return a.rank < b.rank
   end)
+  session.navigation = result
   return result
 end
 
@@ -350,11 +400,9 @@ local function dispose(session)
     tickets[session.ticket] = nil
   end
   if api.nvim_buf_is_valid(session.buf) then
-    api.nvim_buf_del_extmark(session.buf, ns, session.root.mark)
+    delmark(session, session.root)
     for _, record in ipairs(session.records) do
-      if record.mark then
-        api.nvim_buf_del_extmark(session.buf, ns, record.mark)
-      end
+      delmark(session, record)
     end
   end
 end
@@ -369,8 +417,12 @@ function M.stop(buf, all)
     end
   until not all or #stack == 0
   stacks[buf] = #stack > 0 and stack or nil
+  if #stack == 0 then
+    marks[buf] = nil
+  end
   local parent = top(buf)
   if parent and parent.current then
+    parent.synced_tick = nil
     gravity(parent, parent.current)
   end
 end
@@ -467,15 +519,19 @@ sync = function(buf)
   if not session or mutating or session.syncing or not api.nvim_buf_is_loaded(buf) then
     return
   end
+  local tick = api.nvim_buf_get_changedtick(buf)
+  local first, last = range(session, session.root)
+  if not first or (equal(first, last) and session.nonempty) then
+    M.stop(buf, true)
+    return
+  end
+  if session.synced_tick == tick and session.synced_current == session.current then
+    return
+  end
   session.syncing = true
   local ok, err = xpcall(function()
     local tree = vim.fn.undotree()
     if tree.seq_cur < session.seq then
-      M.stop(buf, true)
-      return
-    end
-    local a, b = range(session, session.root)
-    if not a or (equal(a, b) and session.nonempty) then
       M.stop(buf, true)
       return
     end
@@ -494,17 +550,16 @@ sync = function(buf)
       end
       for pass = 1, 16 do
         local dirty = false
-        local updates = {}
+        local updates, values = {}, {}
         for _, record in ipairs(owner.records) do
           if not record.dead then
             if record.kind == "mirror" then
-              local target = owner.groups[record.key]
-              local value = target and contents(owner, target) or ""
+              local value = group_text(owner, record.key, values)
               if contents(owner, record) ~= value then
                 updates[#updates + 1] = { record, value }
               end
             elseif record.kind == "function" or record.kind == "dynamic" then
-              local args = arguments(owner, record)
+              local args = arguments(owner, record, values)
               if not vim.deep_equal(args, record.args) then
                 local value = record.node.fn(args, owner.context)
                 record.args = args
@@ -549,6 +604,8 @@ sync = function(buf)
     end
     if top(buf) == session and session.current then
       gravity(session, session.current)
+      session.synced_tick = api.nvim_buf_get_changedtick(buf)
+      session.synced_current = session.current
     end
   end, debug.traceback)
   session.syncing = false
@@ -672,6 +729,12 @@ function M.expand(body, opts)
     -- Keep selection alive until its queued cursor placement has completed.
     session.finishing = true
   end
+  if not parent then
+    -- A fresh root's model, values and argument snapshots are already in sync.
+    -- Nested expansions must still propagate their changed text to ancestors.
+    session.synced_tick = api.nvim_buf_get_changedtick(buf)
+    session.synced_current = first
+  end
   return true
 end
 
@@ -680,10 +743,10 @@ function M.active(direction)
   if not session or session.finishing then
     return false
   end
-  local list = navigation(session)
   if not direction then
     return true
   end
+  local list = navigation(session)
   for i, record in ipairs(list) do
     if record == session.current then
       return list[i + direction] ~= nil
