@@ -49,11 +49,10 @@ def markdown(before,after,rows,before_path,after_path):
     lines=['# Editing optimization comparison','','Same current configuration and PTY protocol before/after optimization. No engine settings, fixtures, decorations or update events were relaxed to improve timings.','',
            f"{rounds} alternating optimized-engine/LuaSnip rounds; {rounds*args['isolated_samples']} isolated and {rounds*args['configured_samples']} configured samples per case/engine, {args['warmup']} warmup samples each round, {args['startup_runs']} fresh module loads and {args['memory_cycles']} lifecycle cycles. Before-only measurements precede optimization and cannot eliminate time-of-day effects. P95 is the primary tail statistic; P99 is descriptive, especially for the smaller configured sample set.",'',
            f'The comparison contains {total:,} successful measured input operations across three series, with zero validation failures. Exact text, selection, mode and the delivered UI frame are checked. These are PTY-to-validated-flush endpoints, not physical display latency.','',
-           f"Measurements (UTC): before {before['metadata']['utc']}; after {after['metadata']['utc']}.",'', '## Changes','','- Index line starts once per rendered model instead of rescanning prefixes for every node coordinate.',
-           '- Copy numeric navigation paths directly instead of using general recursive table copies.',
-           '- Track editable/computed records; literal text uses its enclosing field/root instead of its own extmark.',
-           '- Reuse synchronous-pass buffer bounds/line reads and avoid rewriting unchanged extmark gravity/highlights.',
-           '- Read initial field values from the just-inserted model instead of querying them back through the buffer.','']
+           f"Measurements (UTC): before {before['metadata']['utc']}; after {after['metadata']['utc']}.",'', '## Changes','']
+    changes=after['metadata'].get('optimization',{}).get('changes',[])
+    lines += ['- '+line for line in changes] or ['Runtime changes are identified by the recorded revisions and file hashes.']
+    lines += ['']
     for track,title in (('isolated','Equivalent isolated definitions'),('configured','Current Markdown configuration'),('startup','Fresh module loading')):
         lines += ['## '+title,'','Milliseconds; smaller is better.','',
                   '| Operation | Before P50 | Optimized P50 | LuaSnip P50 | Before P95 | Optimized P95 | LuaSnip P95 | Before / optimized | N per series |',
@@ -90,8 +89,12 @@ def markdown(before,after,rows,before_path,after_path):
               '## Limits','','- The Markdown configuration has changed since the first comparison: TeX snippets have migrated. This run collects a fresh pre-optimization baseline under that same new configuration.',
               '- LuaSnip and optimized-engine rounds alternate, but the baseline-only phase ran earlier; sub-millisecond changes and host-load differences deserve caution.',
               '- This run targets editing. Trigger lookup/collection scaling was not changed or remeasured.',
-              '- Mirror edits still perform one buffer replacement per replica and scan geometry across records. Extmark writes are reduced, but extremely large mirror sets can still expose quadratic geometry work.',
               '- Profile call counts are instrumented diagnostics, separate from uninstrumented formal timings.','']
+    extra=after['metadata'].get('optimization',{}).get('limits',[])
+    if extra:
+        if lines[-1]=='':lines.pop()
+        lines += ['- '+line for line in extra]
+    lines += ['']
     return '\n'.join(lines)
 
 
@@ -110,9 +113,9 @@ def main():
         assert args.profile_before and args.profile_after, 'Supply both profile files'
         profiles=[json.loads(path.read_text()) for path in (args.profile_before,args.profile_after)]
         report += "\n## Instrumented API diagnostics\n\nMedian call counts over ten isolated operations after warmup. Diagnostic latency is excluded from the formal comparison.\n\n| Operation / API | Before calls | Optimized calls |\n| --- | ---: | ---: |\n"
-        for name in ('table_10x10','mirrors_100'):
+        for name in (case['name'] for case in profiles[0]['cases'] if any(c['name']==case['name'] for c in profiles[1]['cases'])):
             cases=[next(c for c in data['cases'] if c['name']==name) for data in profiles]
-            for api in ('nvim_buf_set_extmark','nvim_buf_get_extmark_by_id','nvim_buf_get_lines','nvim_buf_get_text','nvim_buf_set_text'):
+            for api in ('nvim_buf_set_extmark','nvim_buf_get_extmark_by_id','nvim_buf_get_extmarks','nvim_buf_get_lines','nvim_buf_get_text','nvim_buf_set_text'):
                 counts=[sorted(s['counters']['counts'].get(api,0) for s in c['samples']) for c in cases]
                 medians=[(v[(len(v)-1)//2]+v[len(v)//2])/2 for v in counts]
                 report += f"| {name}/{api} | {medians[0]:.0f} | {medians[1]:.0f} |\n"

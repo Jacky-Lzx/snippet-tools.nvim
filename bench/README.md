@@ -126,6 +126,9 @@ revisions, harness file hashes, per-round samples and failure diagnostics.
 
 ## Local measurement
 
+[2026-11-05 mirror and navigation optimization](reports/2026-11-05-mirror-navigation.md)
+compares the second optimization with a fresh already-optimized baseline and LuaSnip.
+
 [2026-11-05 editing optimization](reports/2026-11-05-optimization.md) compares a fresh
 baseline, optimized snippet-tools and LuaSnip under the same post-migration config.
 
@@ -166,3 +169,14 @@ python3 bench/editing_report.py bench/results/editing-before/results.json \
 
 The report verifies the timed protocol hashes, configuration/engine revisions,
 complete sample counts and absence of validation failures before rendering.
+
+## Local range-query diagnostics
+
+`python3 bench/profile_ranges.py --output bench/results/range-profile` instruments
+single-mark and overlap queries separately, alongside writes and buffer reads.
+It checks 10×10 expansion, 100 mirrors, choice switching and final navigation.
+These counts and instrumented timings do not enter the formal comparison.
+
+The report generator reads optional `metadata.optimization.changes` and
+`metadata.optimization.limits` from the after-run JSON to describe the measured
+change, rather than assuming every future run uses the original optimization.
