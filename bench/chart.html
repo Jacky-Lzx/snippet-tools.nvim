@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Snippet performance comparison</title>
+<style>
+html,body{margin:0;background:transparent;color:var(--foreground,CanvasText);font-family:var(--font-sans,system-ui)}
+#snippet-comparison{width:100%;box-sizing:border-box;font-size:14px}
+#snippet-comparison *{box-sizing:border-box}
+.controls{display:flex;gap:18px;flex-wrap:wrap;align-items:end;margin-bottom:16px}
+.controls label{display:grid;gap:5px}
+select{font:inherit;color:var(--foreground,CanvasText);background:var(--secondary,Canvas);border:1px solid var(--border,ButtonBorder);border-radius:var(--radius,6px);padding:7px 10px;min-height:40px}
+.legend{display:flex;gap:20px;flex-wrap:wrap;margin-bottom:16px;font-size:13px}
+.legend span{display:flex;align-items:center;gap:7px}
+.dot{width:10px;height:10px;border-radius:2px;display:inline-block}
+.new{background:var(--chart-1,Highlight)}.old{background:var(--chart-2,GrayText)}
+.row{display:grid;grid-template-columns:145px 1fr;gap:12px;padding:9px 0;border-bottom:1px solid var(--border,ButtonBorder)}
+.name{font-weight:500;align-self:center}.comparison{display:grid;gap:6px}
+.series{display:grid;grid-template-columns:1fr 70px;gap:10px;align-items:center}
+.track{height:9px;background:color-mix(in srgb,var(--foreground,CanvasText) 5%,transparent);border-radius:2px}
+.bar{height:9px;border-radius:2px}
+.number{font-family:var(--font-mono,monospace);text-align:right;font-variant-numeric:tabular-nums}
+.axis{display:flex;justify-content:space-between;margin:10px 80px 0 157px;color:var(--muted-foreground,GrayText);font-size:12px}
+.detail{font-size:12px;color:var(--muted-foreground,GrayText);line-height:1.5;margin-top:14px}
+#sample-count{font-size:12px;color:var(--muted-foreground,GrayText);margin-left:auto}
+@media(max-width:500px){.row{grid-template-columns:1fr;gap:7px}.axis{margin-left:0}.controls{gap:12px}select{min-height:44px}#sample-count{margin-left:0;width:100%}}
+</style>
+</head>
+<body>
+<main id="snippet-comparison">
+  <div class="controls">
+    <label>测量范围<select id="track"><option value="configured">你的实际配置</option><option value="isolated">隔离的等价定义</option><option value="startup">加载与初始化</option></select></label>
+    <label>统计值<select id="metric"><option value="median">中位数 P50</option><option value="p95">P95</option><option value="p99">P99</option></select></label>
+    <span id="sample-count" aria-live="polite"></span>
+  </div>
+  <div class="legend"><span><i class="dot new"></i>snippet-tools</span><span><i class="dot old"></i>LuaSnip</span><span id="endpoint">输入至 UI 刷新 · ms · 越短越好</span></div>
+  <div id="rows" role="img" aria-label="两个 snippet 引擎的输入至 UI 刷新耗时"></div>
+  <div class="axis" id="axis"></div>
+  <div class="detail" id="detail"></div>
+</main>
+<script>
+const measurements=__BENCH_DATA__;
+const root=document.getElementById('snippet-comparison');
+const names={require_ms:'加载模块',setup_ms:'初始化',plain_input:'普通输入',bold_accept:'确认 bold',link_jump:'跳转 link 字段',figure_update_jump:'figure 联动并跳转',table_2x2:'生成 2×2 表格',table_10x10:'生成 10×10 表格',choice_toggle:'切换 choice',undo_field_edit:'撤销字段编辑',simple_expand:'展开简单模板',jump_final:'跳到最终位置',mirrors_10:'更新 10 个镜像',mirrors_100:'更新 100 个镜像'};
+const fmt=v=>v<1?v.toFixed(3):v.toFixed(2);
+function render(){
+ const track=root.querySelector('#track').value,metric=root.querySelector('#metric').value;
+ const selected=measurements.filter(r=>r.track===track);
+ const suffix=track==='startup'?'':'/ui_ms';
+ const ids=[...new Set(selected.map(r=>r.name.split('/')[0]))];
+ const rows=ids.map(id=>({id,new:selected.find(r=>r.engine==='snippet-tools'&&r.name===id+suffix),old:selected.find(r=>r.engine==='luasnip'&&r.name===id+suffix)})).filter(r=>r.new?.stats&&r.old?.stats);
+ const peak=Math.max(.01,...rows.flatMap(r=>[r.new.stats[metric],r.old.stats[metric]]));
+ const limit=Math.ceil(peak*10)/10;
+ const host=root.querySelector('#rows');host.replaceChildren();
+ for(const item of rows){
+   const row=document.createElement('div');row.className='row';
+   const label=document.createElement('div');label.className='name';label.textContent=names[item.id]||item.id;row.append(label);
+   const bars=document.createElement('div');bars.className='comparison';
+   for(const engine of ['new','old']){
+     const value=item[engine].stats[metric],series=document.createElement('div');series.className='series';
+     const trackEl=document.createElement('div');trackEl.className='track';
+     const bar=document.createElement('div');bar.className='bar '+engine;bar.style.width=(value/limit*100)+'%';trackEl.append(bar);
+     const number=document.createElement('span');number.className='number';number.textContent=fmt(value);
+     series.setAttribute('aria-label',(engine==='new'?'snippet-tools':'LuaSnip')+' '+label.textContent+' '+fmt(value)+' 毫秒');
+     series.append(trackEl,number);bars.append(series);
+   }
+   row.append(bars);host.append(row);
+ }
+ const axis=root.querySelector('#axis');axis.replaceChildren();
+ for(let i=0;i<=4;i++){const tick=document.createElement('span');tick.textContent=fmt(limit*i/4);axis.append(tick)}
+ const counts=[...new Set(rows.flatMap(r=>[r.new.stats.n,r.old.stats.n]))];
+ const failures=selected.reduce((sum,r)=>sum+r.failures,0);
+ root.querySelector('#sample-count').textContent='每项 / 每引擎 n='+counts.join('、')+' · 失败 '+failures;
+ root.querySelector('#endpoint').textContent=track==='startup'?'进程内耗时 · ms · 越短越好':'输入至 UI 刷新 · ms · 越短越好';
+ root.querySelector('#detail').textContent=track==='startup'
+   ?'每次使用新进程与新的字节码缓存目录；操作系统文件缓存已预热。每引擎 20 次，不代表冷磁盘启动或完整 Neovim 启动耗时。'
+   :track==='configured'
+   ?'实际配置保留双引擎兼容层及各自装饰。choice 的默认焦点有差异；撤销使用一致的字段编辑边界。包含 PTY、校验屏障与重绘成本。'
+   :'仅加载一个引擎，使用等价 Lua 定义与即时镜像更新，关闭自定义装饰和完成历史。普通输入使用空触发集合；包含同样的 PTY 与重绘成本。';
+}
+root.querySelector('#track').addEventListener('change',render);root.querySelector('#metric').addEventListener('change',render);render();
+</script>
+</body>
+</html>

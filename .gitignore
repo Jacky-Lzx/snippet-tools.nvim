@@ -1,3 +1,6 @@
 /doc/tags
 *.swp
 .DS_Store
+
+/bench/results/
+/bench/__pycache__/

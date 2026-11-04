@@ -265,5 +265,7 @@ Tests exercise a separate attached UI and real PTY, including intermediate
 selection/rendered states, UTF-8, input bursts, undo/redo, nesting, dynamic
 regeneration and optional integration with the actual sibling completion checkout.
 `SNIPPET_TUI_TRACE=/tmp/snippet-frames.json` records PTY state snapshots.
-Benchmarks report local parse/render/matching costs; they are not an end-to-end
-latency comparison against another engine.
+`tests/bench.sh` reports local parse/render/matching costs. For the LuaSnip
+comparison, see [bench/README.md](bench/README.md): fresh module loads, collection
+scaling, real PTY input in isolation and in the user configuration, and lifecycle
+memory checkpoints. Raw samples and correctness failures are recorded.
