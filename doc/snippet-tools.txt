@@ -13,6 +13,9 @@ choice_next, choice_prev, stop. Keys operate in Insert and Select modes and fall
 back to previous global mappings. dispose() restores mappings still owned by
 the plugin. Buffer-local mappings retain precedence.
 
+enabled=true|false|function(ctx) gates automatic/manual trigger matching for
+multi-engine setups. Explicit expand() and existing sessions remain available.
+
 COLLECTIONS                                           *snippet-tools-collections*
 
 add(filetype, definitions, {key = 'default'}) replaces a named collection.
@@ -52,6 +55,10 @@ stop()                end all sessions in current buffer, preserving text
 update()              synchronize dependencies immediately
 choices()             active alternatives and selected index
 change_choice(1|-1)   switch active alternative and retain edits
+select_choice()       choose through vim.ui.select, preserving picker-buffer state
+cut_selection()       cut Visual selection for the next snippet, preserving registers
+get_selection(buf?)   return stored buffer-local selection
+clear_selection(buf?) clear stored selection
 available(ctx?)       visible literal definitions
 context()             current query snapshot with shared cache
 inspect()             active/depth/current/range/pending/choices/nodes/fields
@@ -78,6 +85,7 @@ COMMANDS                                              *snippet-tools-commands*
 :checkhealth snippet_tools
 
 Highlights: SnippetToolsPlaceholder and SnippetToolsActive.
+User events: SnippetToolsExpand and SnippetToolsEnter; data includes bufnr.
 
 INTEGRATION                                           *snippet-tools-completion*
 

@@ -4,6 +4,7 @@ local session = require("snippet_tools.session")
 local config = { auto = true, keymap = {} }
 local group, maps, auto_pending = nil, {}, false
 local auto_guard = {}
+local selections = {}
 local actions = {
   expand_trigger = true,
   expand_or_jump = true,
@@ -11,6 +12,7 @@ local actions = {
   jump_backward = true,
   choice_next = true,
   choice_prev = true,
+  select_choice = true,
   stop = true,
 }
 local function load(filetype, reload)
@@ -22,6 +24,29 @@ local function termcode(key)
 end
 local function feed(key)
   vim.api.nvim_feedkeys(termcode(key), "in", false)
+end
+local function enabled(ctx)
+  return config.enabled ~= false and (type(config.enabled) ~= "function" or config.enabled(ctx))
+end
+function M.get_selection(buf)
+  return selections[buf or vim.api.nvim_get_current_buf()] or ""
+end
+function M.clear_selection(buf)
+  selections[buf or vim.api.nvim_get_current_buf()] = nil
+end
+function M.cut_selection()
+  local mode = vim.fn.mode()
+  if mode ~= "v" and mode ~= "V" and mode ~= "\22" then
+    return false
+  end
+  local lines = vim.fn.getregion(vim.fn.getpos("v"), vim.fn.getpos("."), {
+    type = mode,
+    exclusive = vim.o.selection == "exclusive",
+  })
+  local text = table.concat(lines, "\n")
+  selections[vim.api.nvim_get_current_buf()] = text
+  feed('"_c')
+  return text
 end
 
 function M.context()
@@ -36,17 +61,30 @@ function M.context()
     line = line,
     tick = vim.api.nvim_buf_get_changedtick(0),
     cache = {},
+    selected_text = M.get_selection(),
   }
 end
 
 function M.expand(body, options)
   options = vim.tbl_extend("force", {}, options or {})
   options.context = options.context or M.context()
+  if options.selected_text == nil then
+    options.selected_text = M.get_selection()
+  end
+  options.context.selected_text = options.selected_text
   options.variables = require("snippet_tools.variables").snapshot(options)
   if type(body) == "string" then
     body = require("snippet_tools.parser").parse(body)
   end
-  return session.expand(require("snippet_tools.nodes").normalize(body), options)
+  local expanded = session.expand(require("snippet_tools.nodes").normalize(body), options)
+  if expanded then
+    M.clear_selection()
+    vim.api.nvim_exec_autocmds(
+      "User",
+      { pattern = "SnippetToolsExpand", modeline = false, data = { bufnr = vim.api.nvim_get_current_buf() } }
+    )
+  end
+  return expanded
 end
 
 function M.expand_definition(entry, match, options)
@@ -62,6 +100,9 @@ end
 
 function M.expand_trigger()
   local ctx = M.context()
+  if not enabled(ctx) then
+    return false
+  end
   load(ctx.filetype)
   local entry, match = registry.find(ctx, false)
   if not entry then
@@ -85,6 +126,7 @@ M.filetype_extend = function(filetype, parents)
 end
 M.available = function(ctx)
   ctx = ctx or M.context()
+  ctx.selected_text = ctx.selected_text or M.get_selection(ctx.bufnr)
   load(ctx.filetype)
   return registry.available(ctx)
 end
@@ -99,6 +141,7 @@ M.reload = function()
 end
 M.update = session.update
 M.change_choice = session.change_choice
+M.select_choice = session.select_choice
 M.choices = session.choices
 M.inspect = session.inspect
 
@@ -109,6 +152,9 @@ function M._auto()
     return
   end
   local ctx = M.context()
+  if not enabled(ctx) then
+    return
+  end
   load(ctx.filetype)
   if auto_guard[buf] == ctx.tick then
     return
@@ -152,7 +198,7 @@ function M.dispose()
       end
     end
   end
-  maps, auto_guard = {}, {}
+  maps, auto_guard, selections = {}, {}, {}
   auto_pending = false
 end
 
@@ -160,6 +206,10 @@ function M.setup(options)
   options = options or {}
   assert(vim.fn.has("nvim-0.11") == 1, "snippet-tools requires Neovim 0.11+")
   assert(options.auto == nil or type(options.auto) == "boolean", "snippet-tools: auto must be boolean")
+  assert(
+    options.enabled == nil or type(options.enabled) == "boolean" or type(options.enabled) == "function",
+    "snippet-tools: enabled must be a boolean or function"
+  )
   assert(
     options.keymap == nil or options.keymap == false or type(options.keymap) == "table",
     "snippet-tools: invalid keymap"
@@ -175,7 +225,7 @@ function M.setup(options)
     )
   end
   M.dispose()
-  config = { auto = options.auto ~= false, keymap = options.keymap or {} }
+  config = { auto = options.auto ~= false, keymap = options.keymap or {}, enabled = options.enabled }
   group = vim.api.nvim_create_augroup("SnippetTools", { clear = true })
   require("snippet_tools.loader").setup(options.paths)
   load(vim.bo.filetype)
@@ -196,7 +246,7 @@ function M.setup(options)
   end
   highlights()
   vim.api.nvim_create_autocmd("ColorScheme", { group = group, callback = highlights })
-  vim.api.nvim_create_autocmd({ "CursorMoved", "CursorMovedI", "InsertLeave" }, {
+  vim.api.nvim_create_autocmd({ "CursorMoved", "CursorMovedI", "InsertLeave", "ModeChanged" }, {
     group = group,
     callback = function()
       session.check_cursor()
@@ -205,13 +255,14 @@ function M.setup(options)
   vim.api.nvim_create_autocmd("BufLeave", {
     group = group,
     callback = function(args)
-      session.stop(args.buf, true)
+      session.leave_buffer(args.buf)
     end,
   })
   vim.api.nvim_create_autocmd("BufWipeout", {
     group = group,
     callback = function(args)
       auto_guard[args.buf] = nil
+      selections[args.buf] = nil
     end,
   })
   vim.api.nvim_create_autocmd("InsertCharPre", {

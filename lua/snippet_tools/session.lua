@@ -3,7 +3,33 @@ local M = {}
 local ns = api.nvim_create_namespace("snippet-tools")
 local stacks, attached, tickets = {}, {}, {}
 local serial, mutating = 0, false
+local fold_locks = {}
 local sync
+local function protect_selection(session)
+  local win = api.nvim_get_current_win()
+  local lock = fold_locks[win]
+  if not lock then
+    lock = { before = vim.wo[win].foldenable, owners = {} }
+    fold_locks[win] = lock
+  end
+  lock.owners[session], session.fold_win = true, win
+  vim.wo[win].foldenable = false
+end
+local function release_selection(session)
+  local win = session.fold_win
+  local lock = win and fold_locks[win]
+  session.fold_win = nil
+  if not lock then
+    return
+  end
+  lock.owners[session] = nil
+  if not next(lock.owners) then
+    if api.nvim_win_is_valid(win) and not vim.wo[win].foldenable then
+      vim.wo[win].foldenable = lock.before
+    end
+    fold_locks[win] = nil
+  end
+end
 
 local function point(row, col)
   return { row, col }
@@ -264,6 +290,7 @@ local function navigation(session)
 end
 
 local function dispose(session)
+  release_selection(session)
   if session.ticket then
     tickets[session.ticket] = nil
   end
@@ -306,6 +333,12 @@ function M._selected(ticket)
       if session.buf == api.nvim_get_current_buf() then
         M.update()
       end
+    else
+      api.nvim_exec_autocmds("User", {
+        pattern = "SnippetToolsEnter",
+        modeline = false,
+        data = { bufnr = session.buf, field = session.current.key },
+      })
     end
   end
 end
@@ -325,6 +358,20 @@ function M._place(ticket)
   local a, b = range(session, record)
   if not a then
     return
+  end
+  if not equal(a, b) and record.node.index ~= 0 then
+    -- Async fold expressions can create a new closed fold after the endpoints
+    -- were opened. Suspend folding only while the field is selected; restoring
+    -- it after replacement prevents Select mode from deleting that entire fold.
+    protect_selection(session)
+  else
+    release_selection(session)
+  end
+  -- A Visual selection starting on a closed fold includes the folded region.
+  -- Open both endpoints in Normal mode before selecting a placeholder.
+  for _, pos in ipairs({ b, a }) do
+    api.nvim_win_set_cursor(0, { pos[1] + 1, pos[2] })
+    vim.cmd("normal! zv")
   end
   if equal(a, b) or record.node.index == 0 then
     api.nvim_win_set_cursor(0, { a[1] + 1, a[2] })
@@ -617,14 +664,17 @@ function M.choices()
   end
 end
 
-function M.change_choice(direction)
-  assert(direction == 1 or direction == -1, "snippet-tools: direction must be 1 or -1")
+function M.set_choice(index)
   M.update()
   local session = top()
   local record = session and session.current
   if not record or record.kind ~= "choice" then
     return false
   end
+  assert(
+    type(index) == "number" and index % 1 == 0 and index >= 1 and index <= #record.node.branches,
+    "snippet-tools: invalid choice index"
+  )
   local old = record.choice
   -- Snapshot both the whole edited alternative and its editable descendants.
   record.snapshots = record.snapshots or {}
@@ -634,7 +684,7 @@ function M.change_choice(direction)
     record.overrides[old] = record.snapshots[old]
   end
   save_children(session, record, false)
-  record.choice = (old - 1 + direction) % #record.node.branches + 1
+  record.choice = index
   session.choices[record.key] = record.choice
   record.overridden = record.overrides[record.choice] ~= nil
   local model = format_model(
@@ -658,10 +708,79 @@ function M.change_choice(direction)
   return true
 end
 
+function M.change_choice(direction)
+  assert(direction == 1 or direction == -1, "snippet-tools: direction must be 1 or -1")
+  local choices, index = M.choices()
+  return choices and M.set_choice((index - 1 + direction) % #choices + 1) or false
+end
+
+local function describe(nodes)
+  local parts = {}
+  for _, node in ipairs(nodes) do
+    parts[#parts + 1] = node.kind == "text" and node.text
+      or (node.children and describe(node.children))
+      or (node.kind == "choice" and describe(node.branches[1]))
+      or (node.kind == "mirror" and "$" .. node.index)
+      or ("<" .. node.kind .. ">")
+  end
+  return table.concat(parts):gsub("\n", " ↵ ")
+end
+function M.select_choice()
+  local session = top()
+  local record = session and session.current
+  if not record or record.kind ~= "choice" then
+    return false
+  end
+  local win, labels = api.nvim_get_current_win(), {}
+  for i, branch in ipairs(record.node.branches) do
+    labels[i] = describe(branch)
+  end
+  session.selecting = true
+  local ok, err = pcall(vim.ui.select, labels, { prompt = "Snippet choice" }, function(_, index)
+    if top(session.buf) ~= session or session.current ~= record then
+      return
+    end
+    session.selecting = false
+    if not api.nvim_win_is_valid(win) or api.nvim_win_get_buf(win) ~= session.buf then
+      M.stop(session.buf, true)
+      return
+    end
+    api.nvim_set_current_win(win)
+    if index then
+      M.set_choice(index)
+    else
+      select(session, record)
+    end
+  end)
+  if not ok then
+    session.selecting = false
+    error(err)
+  end
+  return true
+end
+function M.leave_buffer(buf)
+  local session = top(buf)
+  if not session or not session.selecting then
+    M.stop(buf, true)
+  end
+end
+
 function M.check_cursor()
   local session = top()
   if not session then
     return
+  end
+  local mode = api.nvim_get_mode().mode
+  if
+    not session.pending
+    and mode ~= "s"
+    and mode ~= "S"
+    and mode ~= "\19"
+    and mode ~= "v"
+    and mode ~= "V"
+    and mode ~= "\22"
+  then
+    release_selection(session)
   end
   if session.finishing and not session.pending then
     M.stop(session.buf)

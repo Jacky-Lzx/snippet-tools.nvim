@@ -46,6 +46,15 @@ Defaults are `{ auto = true, paths = {}, keymap = {} }`. Mappings are opt-in.
 Use `auto = false` to disable automatic triggers or `keymap = false` when a
 completion engine owns the keys.
 
+`enabled = function(ctx) return ... end` gates automatic and manual trigger
+matching per buffer, allowing another engine to own triggers while disabled.
+It does not prevent explicit `expand()` calls or navigation of existing sessions.
+
+Use `vim.keymap.set("x", "`", s.cut_selection)` to cut a Visual selection for the
+next expansion. `ctx.selected_text` and `TM_SELECTED_TEXT` receive that text.
+`get_selection(buf?)` and `clear_selection(buf?)` inspect/reset this buffer-local
+selection. Cutting uses the black-hole register and preserves named registers.
+
 ## Lua definitions
 
 `body` accepts an LSP-style string or a list of nodes. Helpers have short aliases:
@@ -204,6 +213,7 @@ Completion's primary edit and expansion share an undo transaction.
 - `active(direction?)`, `jump(1|-1)`, `stop()`, `update()` manage the current session.
 - `choices()` returns the active choice's node alternatives and selected index.
 - `change_choice(1|-1)`, `choice_next()`, `choice_prev()` switch alternatives.
+- `select_choice()` uses `vim.ui.select`, preserving the session across picker buffers.
 - `available(ctx?)`, `context()`, `inspect()` expose candidates and diagnostics.
 
 Expansion options include `range = { {start_row, start_col}, {end_row, end_col} }`
@@ -217,10 +227,15 @@ Moving outside the snippet or leaving the buffer ends the session. Reaching root
 behind its tracked undo sequence; redo restores text without recreating sessions.
 Replacing a whole parent field discards its old nested fields. Finished snippets
 are not retained in a history jump list. `stop()` preserves buffer text.
+While a field is selected, window folding is temporarily suspended so an
+asynchronous fold cannot widen the replacement range. The previous folding
+setting is restored when selection ends or the session stops.
 
 `:SnippetToolsInspect`, `:SnippetToolsStop`, `:SnippetToolsReload` and
 `:checkhealth snippet_tools` are available after setup.
 Highlights are `SnippetToolsPlaceholder` and `SnippetToolsActive`.
+The `User` events `SnippetToolsExpand` and `SnippetToolsEnter` expose expansion
+and field-entry transitions for integrations; their data includes `bufnr`.
 
 ## Compatibility boundaries
 
