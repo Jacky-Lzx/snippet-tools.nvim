@@ -74,29 +74,35 @@ local function entries(filetype)
 end
 
 -- Collections are indexed once per registry revision, not once per character.
-local revision, indexed = 0, {}
+local indexed = {}
 local add, extend = M.add, M.extend
 function M.add(...)
   add(...)
-  revision, indexed = revision + 1, {}
+  indexed = {}
 end
 function M.extend(...)
   extend(...)
-  revision, indexed = revision + 1, {}
+  indexed = {}
 end
 local function get_index(filetype)
   if indexed[filetype] then
     return indexed[filetype]
   end
-  local index = { all = entries(filetype), suffix = {}, patterns = {} }
+  local index = {
+    all = entries(filetype),
+    suffix = { [true] = {}, [false] = {} },
+    patterns = { [true] = {}, [false] = {} },
+    has_auto = false,
+  }
   for _, entry in ipairs(index.all) do
     if entry.pattern then
-      index.patterns[#index.patterns + 1] = entry
+      table.insert(index.patterns[entry.auto], entry)
     else
       local last = entry.trigger:sub(-1)
-      index.suffix[last] = index.suffix[last] or {}
-      table.insert(index.suffix[last], entry)
+      index.suffix[entry.auto][last] = index.suffix[entry.auto][last] or {}
+      table.insert(index.suffix[entry.auto][last], entry)
     end
+    index.has_auto = index.has_auto or entry.auto
   end
   indexed[filetype] = index
   return index
@@ -128,14 +134,18 @@ end
 
 function M.find(ctx, auto)
   local index = get_index(ctx.filetype)
-  local candidates = vim.list_extend(vim.list_slice(index.suffix[ctx.before:sub(-1)] or {}), index.patterns)
-  table.sort(candidates, before)
-  for _, entry in ipairs(candidates) do
-    if entry.auto == auto then
-      local match = M.match(entry, ctx)
-      if match then
-        return entry, match
-      end
+  local literal, patterns = index.suffix[auto][ctx.before:sub(-1)] or {}, index.patterns[auto]
+  local i, j = 1, 1
+  while literal[i] or patterns[j] do
+    local entry
+    if literal[i] and (not patterns[j] or before(literal[i], patterns[j])) then
+      entry, i = literal[i], i + 1
+    else
+      entry, j = patterns[j], j + 1
+    end
+    local match = M.match(entry, ctx)
+    if match then
+      return entry, match
     end
   end
 end
@@ -151,17 +161,28 @@ function M.available(ctx)
 end
 
 function M.has_auto(filetype)
-  for _, entry in ipairs(get_index(filetype).all) do
-    if entry.auto then
-      return true
+  return get_index(filetype).has_auto
+end
+
+function M.filetypes(filetype)
+  local result, visited = {}, {}
+  local function visit(ft)
+    if ft == "" or visited[ft] then
+      return
+    end
+    visited[ft] = true
+    result[#result + 1] = ft
+    for _, parent in ipairs(extensions[ft] or {}) do
+      visit(parent)
     end
   end
-  return false
+  visit(filetype)
+  visit("all")
+  return result
 end
 
 function M.clear()
   stores, extensions, indexed = {}, {}, {}
-  revision = revision + 1
 end
 
 return M

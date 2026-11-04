@@ -16,6 +16,10 @@ eq("$1 } \\alpha", render("\\$1 \\} \\alpha").text)
 eq("one,two", render("${1|one\\,two,three|}").text)
 eq("fallback", render("${UNKNOWN:fallback}").text)
 eq("UNKNOWN", render("$UNKNOWN").text)
+eq(true, render("$UNKNOWN").groups["root/1"] ~= nil)
+eq("default", r.render(p.parse("${NAME:default}"), { variables = { NAME = "" } }).text)
+eq(true, render("${UNKNOWN:${1:inner}}").groups["root/1"] ~= nil)
+eq("inner-inner", render("$1-${UNKNOWN:${1:inner}}").text)
 eq("value", r.render(p.parse("$NAME"), { variables = { NAME = "value" } }).text)
 eq(false, pcall(p.parse, "${1:unfinished"))
 eq(false, pcall(p.parse, "${1/a/b/}"))
@@ -35,4 +39,14 @@ local result = r.render(body)
 eq("49 / 49text49 generated", result.text)
 eq(true, result.groups["root/3@dynamic/1"] ~= nil)
 eq("49 / 49[nested]49 generated", r.render(body, { choices = { ["root/2"] = 2 } }).text)
+eq(
+  "[inner]=[inner]",
+  r.render({ n.mirror(1), n.text("="), n.choice(1, { { n.text("["), n.insert(1, "inner"), n.text("]") } }) }).text
+)
+eq(
+  "child=child",
+  r.render({ n.mirror(1), n.text("="), n.dynamic(1, function()
+    return n.insert(1, "child")
+  end) }).text
+)
 print("core: " .. count .. " assertions passed")

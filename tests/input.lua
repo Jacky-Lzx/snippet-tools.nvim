@@ -1,0 +1,348 @@
+-- A separate Neovim with an attached UI runs the real input/event loop.
+local child = vim.fn.jobstart(
+  { vim.v.progpath, "--embed", "-u", "tests/minimal_init.lua", "-i", "NONE", "-n" },
+  { rpc = true }
+)
+assert(child > 0)
+local function rpc(method, ...)
+  return vim.rpcrequest(child, method, ...)
+end
+local function lua(code, ...)
+  return rpc("nvim_exec_lua", code, { ... })
+end
+local function input(keys)
+  vim.rpcnotify(child, "nvim_input", keys)
+end
+local function wait(code, label)
+  assert(
+    vim.wait(2000, function()
+      return lua(code) == true
+    end, 5),
+    (label or code)
+      .. "\n"
+      .. vim.inspect(
+        lua(
+          [[return {lines=vim.api.nvim_buf_get_lines(0,0,-1,false),mode=vim.api.nvim_get_mode().mode,
+      cursor=vim.api.nvim_win_get_cursor(0),state=require('snippet_tools').inspect(),err=vim.v.errmsg,notifications=notifications}]]
+        )
+      )
+  )
+end
+local function eq(expected, actual)
+  assert(vim.deep_equal(expected, actual), vim.inspect({ expected = expected, actual = actual }))
+end
+local count = 0
+local function test(name, run)
+  input("<Esc><Esc>")
+  wait("return vim.api.nvim_get_mode().mode=='n'")
+  lua([[
+    if package.loaded.completion_tools then require('completion_tools').dispose() end
+    local s=require('snippet_tools')
+    s.dispose(); require('snippet_tools.registry').clear()
+    vim.cmd('enew!'); vim.bo.filetype='lua'; vim.bo.expandtab=true; vim.bo.shiftwidth=2
+    vim.o.selection='inclusive'; notifications={}; vim.v.errmsg=''
+    vim.notify=function(msg,level) notifications[#notifications+1]={msg=msg,level=level} end
+    s.setup({keymap={['<Tab>']='expand_or_jump',['<S-Tab>']='jump_backward',['<F6>']='choice_next',['<F7>']='choice_prev'}})
+    vim.keymap.set({'i','s'},'<F5>',function() s.expand(fixture) end)
+  ]])
+  local ok, err = xpcall(run, debug.traceback)
+  assert(ok, name .. ": " .. tostring(err))
+  eq({}, lua("return notifications"))
+  count = count + 1
+  print("input: " .. name)
+end
+local ok, err = xpcall(function()
+  rpc("nvim_ui_attach", 100, 30, { rgb = true })
+  test("placeholder replacement, live mirror, final stop and burst input", function()
+    lua([[fixture='hello ${1:world} / $1!$0']])
+    input("i<F5>name<Tab>!")
+    wait(
+      "return vim.api.nvim_get_current_line()=='hello name / name!!' and vim.api.nvim_get_mode().mode=='i'"
+    )
+    eq(false, lua("return require('snippet_tools').active()"))
+  end)
+  test("empty adjacent placeholders keep independent boundaries", function()
+    lua([[fixture='$1$2$0']])
+    input("i<F5>A<Tab>B<Tab>C")
+    wait("return vim.api.nvim_get_current_line()=='ABC'")
+  end)
+  test("jump backwards reselects the original field", function()
+    lua([[fixture='${1:one}-${2:two}$0']])
+    input("i<F5>A<Tab>B<S-Tab>C<Tab><Tab>!")
+    wait("return vim.api.nvim_get_current_line()=='C-B!'")
+  end)
+  test("multiline UTF-8 placeholders and mirrors", function()
+    lua([[fixture='${1:你好\n世界} / $1$0']])
+    input("i<F5>中文<Tab>!")
+    wait("return vim.api.nvim_get_current_line()=='中文 / 中文!'")
+  end)
+  test("selection=exclusive replaces exactly the placeholder", function()
+    lua([[vim.o.selection='exclusive'; fixture='[${1:abc}]$0']])
+    input("i<F5>X<Tab>!")
+    wait("return vim.api.nvim_get_current_line()=='[X]!'")
+  end)
+  test("manual trigger replacement respects word boundaries and suffix", function()
+    lua([[require('snippet_tools').add('lua',{{trigger='fn',body='function ${1:name}()$0'}});
+      vim.api.nvim_buf_set_lines(0,0,-1,false,{'fnTAIL'}); vim.api.nvim_win_set_cursor(0,{1,2})]])
+    input("i<Tab>run<Tab>!")
+    wait("return vim.api.nvim_get_current_line()=='function run()!TAIL'")
+  end)
+  test("Lua function nodes update only when dependencies change", function()
+    lua([[
+      local s=require('snippet_tools'); calls=0
+      fixture={s.i(1,'49'),s.t('/'),s.f(function(a) calls=calls+1;return tostring(98-tonumber(a[1])) end,{1}),s.t(':'),s.i(2,'body'),s.i(0)}
+    ]])
+    input("i<F5>60<Tab>")
+    wait("return vim.api.nvim_get_current_line()=='60/38:body' and vim.api.nvim_get_mode().mode=='s'")
+    local calls = lua("return calls")
+    input("text")
+    wait("return vim.api.nvim_get_current_line()=='60/38:text'")
+    eq(calls, lua("return calls"))
+  end)
+  test("plain choice alternatives preserve edited text", function()
+    lua([[fixture='${1|red,blue|}-$1$0']])
+    input("i<F5>green<F6>")
+    wait("return vim.api.nvim_get_current_line()=='blue-blue'")
+    input("<F7>")
+    wait("return vim.api.nvim_get_current_line()=='green-green'")
+    input("<Tab>!")
+    wait("return vim.api.nvim_get_current_line()=='green-green!'")
+  end)
+  test("nested choice branches restore their editable fields", function()
+    lua([[
+      local s=require('snippet_tools')
+      fixture={s.c(1,{{s.t('['),s.i(1,'first'),s.t(']')},{s.t('{'),s.i(1,'second'),s.t('}')}}),s.i(0)}
+    ]])
+    input("i<F5><Tab>edited<S-Tab><F6>")
+    wait("return vim.api.nvim_get_current_line()=='{second}'")
+    input("<Tab>other<S-Tab><F7>")
+    wait("return vim.api.nvim_get_current_line()=='[edited]'")
+    input("<Tab>again<Tab>!")
+    wait("return vim.api.nvim_get_current_line()=='[again]!'")
+  end)
+  test("dynamic nodes generate editable local placeholders", function()
+    lua([[
+      local s=require('snippet_tools')
+      fixture={s.i(1,'2'),s.t(':'),s.d(2,function(a)
+        local result={}; for j=1,math.min(5,tonumber(a[1]) or 0) do
+          result[#result+1]=s.i(j,'cell'); result[#result+1]=s.t('|')
+        end; return result
+      end,{1}),s.i(0)}
+    ]])
+    input("i<F5>3<Tab>A<Tab>B<Tab>C<Tab>!")
+    wait("return vim.api.nvim_get_current_line()=='3:A|B|C|!'")
+  end)
+  test("nested expansion updates outer mirrors and resumes outer navigation", function()
+    lua([[fixture='[${1:outer}]=$1:${2:next}$0']])
+    input("i<F5>")
+    wait("return vim.api.nvim_get_mode().mode=='s'")
+    lua([[fixture='(${1:inner})$0']])
+    input("<F5>X<Tab>")
+    wait("return vim.api.nvim_get_current_line()=='[(X)]=(X):next'")
+    input("<Tab>Y<Tab>!")
+    wait("return vim.api.nvim_get_current_line()=='[(X)]=(X):Y!'")
+  end)
+  test("automatic expansion sees each character in a single input burst", function()
+    lua([[require('snippet_tools').add('lua',{{trigger='mk',body='[$1]$0',auto=true}})]])
+    input("imkX<Tab>!")
+    wait("return vim.api.nvim_get_current_line()=='[X]!'")
+  end)
+  test("pattern autosnippets expose captures to dynamic nodes", function()
+    lua([[
+      local s=require('snippet_tools'); s.add('lua',{{trigger='table(%d+) ',pattern=true,auto=true,
+        body={s.d(1,function(_,ctx) return s.t(string.rep('|',tonumber(ctx.match.captures[1]))) end),s.i(0)}}})
+    ]])
+    input("itable3 X")
+    wait("return vim.api.nvim_get_current_line()=='|||X'")
+  end)
+  test("a single undo restores an automatic expansion trigger", function()
+    lua([[require('snippet_tools').add('lua',{{trigger='mk',body='[$1]$0',auto=true}})]])
+    input("imk")
+    wait("return vim.api.nvim_get_current_line()=='[]'")
+    input("<Esc>u")
+    wait("return vim.api.nvim_get_current_line()=='mk'")
+    eq(false, lua("return require('snippet_tools').active()"))
+    input("<C-r>")
+    wait("return vim.api.nvim_get_current_line()=='[]'")
+  end)
+  test("manual expansion is one undo operation", function()
+    lua([[require('snippet_tools').add('lua',{{trigger='fn',body='[${1:name}]-$1$0'}})]])
+    input("ifn<Tab>")
+    wait("return vim.api.nvim_get_mode().mode=='s' and vim.api.nvim_get_current_line()=='[name]-name'")
+    input("<Esc>u")
+    wait("return vim.api.nvim_get_current_line()=='fn'")
+    eq(false, lua("return require('snippet_tools').active()"))
+  end)
+  test("indentation and tabs follow buffer settings", function()
+    lua([[fixture='function ${1:name}()\n\t$0\nend';vim.api.nvim_buf_set_lines(0,0,-1,false,{'    '})]])
+    input("A<F5>run<Tab>body")
+    wait("return vim.api.nvim_get_current_line()=='      body'")
+    eq(
+      { "    function run()", "      body", "    end" },
+      lua("return vim.api.nvim_buf_get_lines(0,0,-1,false)")
+    )
+  end)
+  test("leaving the region cancels the session", function()
+    lua([[fixture='${1:field}$0';vim.api.nvim_buf_set_lines(0,0,-1,false,{'','outside'})]])
+    input("i<F5><Esc>j")
+    wait("return vim.api.nvim_win_get_cursor(0)[1]==2 and not require('snippet_tools').active()")
+  end)
+  test("buffer changes dispose the old session", function()
+    lua([[fixture='${1:field}$0']])
+    input("i<F5><Esc>")
+    wait("return vim.api.nvim_get_mode().mode=='n'")
+    lua([[vim.cmd('enew!')]])
+    eq(false, lua("return require('snippet_tools').active()"))
+  end)
+  test("replacing an enclosing placeholder discards its old nested fields", function()
+    lua([[fixture='${1:outer ${2:inner}}-${3:next}$0']])
+    input("i<F5>X<Tab>Y<Tab>!")
+    wait("return vim.api.nvim_get_current_line()=='X-Y!'")
+  end)
+  test("unknown variables become editable placeholders", function()
+    lua([[fixture='$UNKNOWN-$0']])
+    input("i<F5>value<Tab>!")
+    wait("return vim.api.nvim_get_current_line()=='value-!'")
+  end)
+  test("mirrors follow edits before the source field", function()
+    lua([[fixture='$1=${1:name}:$0']])
+    input("i<F5>longer<Tab>!")
+    wait("return vim.api.nvim_get_current_line()=='longer=longer:!'")
+  end)
+  test("readonly text adjacent to an empty field keeps its boundary", function()
+    lua([[fixture='$1$1${2:tail}$0']])
+    input("i<F5>X<Tab>Y<Tab>!")
+    wait("return vim.api.nvim_get_current_line()=='XXY!'")
+  end)
+  test("choice whole-branch replacement survives switching", function()
+    lua([[
+      local s=require('snippet_tools');fixture={s.c(1,{{s.t('['),s.i(1,'field'),s.t(']')},'other'}),s.i(0)}
+    ]])
+    input("i<F5>replaced<F6><F7><Tab>!")
+    wait("return vim.api.nvim_get_current_line()=='replaced!'")
+  end)
+  test("sequential API jumps discard stale selection requests", function()
+    lua(
+      [[vim.keymap.set('i','<F8>',function() local s=require('snippet_tools');s.expand('${1:one}-${2:two}$0');s.jump(1) end)]]
+    )
+    input("i<F8>X<Tab>!")
+    wait("return vim.api.nvim_get_current_line()=='one-X!'")
+  end)
+  test("dynamic regeneration restores user-edited fields by local index", function()
+    lua([[
+      local s=require('snippet_tools')
+      fixture={s.i(1,'2'),s.t(':'),s.d(2,function(a)
+        local result={};for j=1,math.min(4,tonumber(a[1]) or 0) do
+          result[#result+1]=s.i(j,'cell');result[#result+1]=s.t('|')
+        end;return result
+      end,{1}),s.i(0)}
+    ]])
+    input("i<F5><Tab>A<Tab>B<S-Tab><S-Tab>3<Tab>")
+    wait("return vim.api.nvim_get_current_line()=='3:A|B|cell|' and vim.api.nvim_get_mode().mode=='s'")
+    input("<Tab><Tab>C<Tab>!")
+    wait("return vim.api.nvim_get_current_line()=='3:A|B|C|!'")
+  end)
+  test("regenerated empty dynamic fields stay before their following sibling", function()
+    lua([[
+      local s=require('snippet_tools');fixture={s.i(1,'a'),s.d(2,function()return s.i(1)end,{1}),s.i(3),s.i(0)}
+    ]])
+    input("i<F5>b<Tab>X<Tab>Y<Tab>!")
+    wait("return vim.api.nvim_get_current_line()=='bXY!'")
+  end)
+  test("choice switching does not retain dead runtime records", function()
+    lua([[fixture='${1|red,blue|}$0']])
+    input("i<F5>")
+    wait("return vim.api.nvim_get_mode().mode=='s'")
+    local nodes = lua("return require('snippet_tools').inspect().nodes")
+    for _ = 1, 30 do
+      input("<F6>")
+    end
+    wait("return vim.api.nvim_get_current_line()=='red' and vim.api.nvim_get_mode().mode=='s'")
+    eq(nodes, lua("return require('snippet_tools').inspect().nodes"))
+    input("<Tab>!")
+    wait("return vim.api.nvim_get_current_line()=='red!'")
+  end)
+  test("lazy loading follows extensions and reload replaces definitions", function()
+    lua([[
+      loader_dir=vim.fn.tempname();vim.fn.mkdir(loader_dir,'p')
+      vim.fn.writefile({"return {{trigger='loaded',body='[${1:value}]$0'}}"},loader_dir..'/tex.lua')
+      vim.fn.writefile({"error('unrelated filetype loaded')"},loader_dir..'/rust.lua')
+      local s=require('snippet_tools');s.filetype_extend('lua',{'tex'})
+      s.setup({paths={loader_dir},keymap={['<Tab>']='expand_or_jump'}})
+    ]])
+    input("iloaded<Tab>X<Tab>!")
+    wait("return vim.api.nvim_get_current_line()=='[X]!'")
+    lua([[
+      vim.fn.writefile({"return {{trigger='new',body='new'}}"},loader_dir..'/tex.lua')
+      require('snippet_tools').reload()
+      local entries=require('snippet_tools').available();assert(#entries==1 and entries[1].trigger=='new')
+      vim.fn.delete(loader_dir..'/tex.lua');require('snippet_tools').reload()
+      assert(#require('snippet_tools').available()==0)
+      vim.fn.delete(loader_dir,'rf')
+    ]])
+  end)
+  test("setup restores existing mappings and leaves newer mappings alone", function()
+    lua([[
+      local s=require('snippet_tools');s.dispose()
+      vim.keymap.set('i','<Tab>',function()return 'ORIGINAL'end,{expr=true})
+      s.setup({keymap={['<Tab>']='expand_or_jump'}})
+    ]])
+    input("i<Tab>")
+    wait("return vim.api.nvim_get_current_line()=='ORIGINAL'")
+    lua([[
+      local s=require('snippet_tools');s.dispose()
+      assert(vim.fn.maparg('<Tab>','i',false,true).expr==1)
+      s.setup({keymap={['<Tab>']='expand_or_jump'}})
+      replacement=function()return 'NEW'end
+      vim.keymap.set('i','<Tab>',replacement,{expr=true});s.dispose()
+      assert(vim.fn.maparg('<Tab>','i',false,true).callback==replacement)
+      vim.keymap.del('i','<Tab>')
+    ]])
+  end)
+  local completion = vim.env.COMPLETION_TOOLS_PATH
+  if completion then
+    lua("vim.opt.runtimepath:append(...)", completion)
+    test("completion-tools accepts Lua definitions and preserves one undo transaction", function()
+      lua([[
+        local s=require('snippet_tools');s.setup({keymap=false})
+        s.add('lua',{{trigger='hello',body='hello ${1:world} / $1$0',description='Greeting'}})
+        local opts=require('snippet_tools.integrations.completion_tools').options()
+        opts.sources={'snippets'}
+        require('completion_tools').setup(opts)
+      ]])
+      input("ihe")
+      wait("return require('completion_tools')._can('accept')")
+      input("<Tab>user<Tab>!")
+      wait("return vim.api.nvim_get_current_line()=='hello user / user!'")
+    end)
+    for _, mode in ipairs({ 1, 2 }) do
+      test("completion-tools LSP snippets respect insertTextMode=" .. mode, function()
+        lua(
+          [[
+          local mode=...
+          local s=require('snippet_tools');s.setup({keymap=false})
+          local opts=require('snippet_tools.integrations.completion_tools').options()
+          opts.sources={'fixture'}; opts.providers.fixture={complete=function(_,cb)
+            cb({items={{label='block',insertText='block\n\t${1:value}\n$0',insertTextFormat=2,insertTextMode=mode}}})
+          end}
+          require('completion_tools').setup(opts)
+          vim.api.nvim_buf_set_lines(0,0,-1,false,{'    blTAIL'});vim.api.nvim_win_set_cursor(0,{1,6})
+        ]],
+          mode
+        )
+        input("i<C-Space>")
+        wait("return require('completion_tools')._can('accept')")
+        input("<Tab>changed<Tab>!")
+        wait("return vim.api.nvim_get_current_line():find('!',1,true)~=nil")
+        eq(
+          mode == 1 and { "    block", "\tchanged", "!TAIL" } or { "    block", "      changed", "    !TAIL" },
+          lua("return vim.api.nvim_buf_get_lines(0,0,-1,false)")
+        )
+      end)
+    end
+  end
+end, debug.traceback)
+pcall(rpc, "nvim_command", "qa!")
+vim.fn.jobstop(child)
+assert(ok, err)
+print("input: " .. count .. " scenarios passed")
