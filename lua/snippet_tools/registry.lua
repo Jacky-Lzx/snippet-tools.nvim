@@ -14,6 +14,12 @@ function M.add(filetype, definitions, options)
     local trigger = spec.trigger or spec.prefix
     assert(type(trigger) == "string" and trigger ~= "", "snippet-tools: trigger must not be empty")
     assert(spec.pattern == nil or type(spec.pattern) == "boolean", "snippet-tools: pattern must be boolean")
+    for _, name in ipairs({ "auto", "hidden", "word" }) do
+      assert(
+        spec[name] == nil or type(spec[name]) == "boolean",
+        "snippet-tools: " .. name .. " must be boolean"
+      )
+    end
     assert(spec.condition == nil or type(spec.condition) == "function", "snippet-tools: invalid condition")
     assert(
       spec.show_condition == nil or type(spec.show_condition) == "function",
@@ -39,7 +45,11 @@ function M.add(filetype, definitions, options)
       condition = spec.condition,
       show_condition = spec.show_condition,
     }
-    assert(type(entries[#entries].priority) == "number", "snippet-tools: invalid priority")
+    local priority = entries[#entries].priority
+    assert(
+      type(priority) == "number" and priority % 1 == 0 and math.abs(priority) <= 1000000000,
+      "snippet-tools: priority must be an integer between -1000000000 and 1000000000"
+    )
   end
   stores[filetype] = stores[filetype] or {}
   stores[filetype][options.key or "default"] = entries

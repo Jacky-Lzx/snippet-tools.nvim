@@ -49,6 +49,7 @@ function M.options()
   return {
     providers = { snippets = M.new() },
     snippets = {
+      preset = "default",
       expand = function(text, options)
         return require("snippet_tools").expand(text, {
           indent = not (options and options.insert_text_mode),

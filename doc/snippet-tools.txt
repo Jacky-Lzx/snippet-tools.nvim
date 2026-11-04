@@ -1,0 +1,98 @@
+*snippet-tools.txt*              Standalone Lua snippet engine
+
+snippet-tools.nvim requires Neovim 0.11+. No native build is needed.
+See README.md for full examples, collection format and compatibility boundaries.
+
+SETUP                                                 *snippet-tools-setup*
+
+Call require('snippet_tools').setup({ auto = true, paths = {}, keymap = {} }).
+Mappings are opt-in; requiring the module alone installs no mappings.
+
+keymap actions: expand_trigger, expand_or_jump, jump_forward, jump_backward,
+choice_next, choice_prev, stop. Keys operate in Insert and Select modes and fall
+back to previous global mappings. dispose() restores mappings still owned by
+the plugin. Buffer-local mappings retain precedence.
+
+COLLECTIONS                                           *snippet-tools-collections*
+
+add(filetype, definitions, {key = 'default'}) replaces a named collection.
+Each definition has trigger, body and optional description, preview, priority,
+word, auto, hidden, pattern, condition(ctx, match), show_condition(ctx).
+
+body is an LSP-style string or a list of Lua nodes. pattern=true uses Lua
+patterns. word=true (default) requires a keyword boundary before the trigger.
+
+setup({paths={directory}}) loads directory/all.lua and directory/<filetype>.lua
+lazily. Each file returns definitions. filetype_extend(ft, parents) includes
+parent collections. reload() replaces current collections, including deletions.
+Only configured, trusted Lua collection files are executed.
+
+NODES                                                 *snippet-tools-nodes*
+
+t(text)               literal text
+i(index, default)     editable field, index 0 is the final stop
+rep(index)            mirror a field in the same scope
+c(index, branches)    alternatives of strings or nodes
+f(fn, deps)           computed text: fn(args, ctx) returns a string
+d(index, fn, deps)    generated nodes with local field indices
+
+Full names: text, insert, mirror, choice, func, dynamic.
+Each choice branch/dynamic result has local indices. Dependencies refer to the
+enclosing scope; args are strings. Declare all dependencies and use stable local
+indices to preserve edited generated fields. LSP nesting shares its string scope.
+
+API                                                   *snippet-tools-api*
+
+expand(body, opts)     insert body; replace selected active field if applicable
+expand_trigger()      expand matching manual trigger, return boolean
+expand_or_jump()      manual expansion or next field
+active(direction?)    check active session/available destination
+jump(1|-1)            forward/backward navigation, return boolean
+stop()                end all sessions in current buffer, preserving text
+update()              synchronize dependencies immediately
+choices()             active alternatives and selected index
+change_choice(1|-1)   switch active alternative and retain edits
+available(ctx?)       visible literal definitions
+context()             current query snapshot with shared cache
+inspect()             active/depth/current/range/pending/choices/nodes/fields
+dispose()             stop sessions and remove owned handlers/mappings
+
+expand options: range={{row,col},{end_row,end_col}} uses zero-based byte positions
+and an exclusive end. indent=false disables inherited indentation. expand_tabs=false
+preserves tabs. variables and resolve_variable(name) customize variable lookup;
+selected_text supplies TM_SELECTED_TEXT. join_undo=true joins an enclosing edit.
+
+LIFECYCLE                                             *snippet-tools-lifecycle*
+
+Leaving the buffer or snippet region ends the session. Root $0 ends its session
+and resumes its parent. Completed snippets have no history jump list. Replacing
+a parent field discards its children. Undo behind the tracked sequence ends the
+session; redo restores text without recreating sessions. One undo of a manual
+or automatic expansion restores its trigger. Pasted text does not auto-expand.
+
+COMMANDS                                              *snippet-tools-commands*
+
+:SnippetToolsInspect   Show the current session's state and live node counts.
+:SnippetToolsStop      End the current buffer's snippet sessions.
+:SnippetToolsReload    Reload current/inherited collections, removing deleted files.
+:checkhealth snippet_tools
+
+Highlights: SnippetToolsPlaceholder and SnippetToolsActive.
+
+INTEGRATION                                           *snippet-tools-completion*
+
+require('snippet_tools.integrations.completion_tools').options() returns
+providers.snippets and snippets.expand/active/jump for completion-tools.setup().
+Use the default snippet preset and disable standalone mappings if completion
+owns Tab. The adapter also expands LSP snippet items and respects insertTextMode.
+
+LIMITATIONS                                           *snippet-tools-limitations*
+
+Supported: tabstops, nested defaults, mirrors, choices, escaping, variables,
+common TM_* and CURRENT_* values, Lua computed and dynamic nodes.
+Unknown variables without defaults become editable fields.
+ECMAScript regex transformations are rejected; use Lua functions instead.
+LuaSnip DSL, VSCode package discovery, SnipMate files and LuaSnip history/restore
+APIs require migration. This is not a complete LSP snippet implementation.
+
+vim:tw=78:ts=8:noet:ft=help:norl:

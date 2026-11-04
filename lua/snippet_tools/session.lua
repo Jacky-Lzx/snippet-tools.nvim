@@ -30,6 +30,16 @@ local function range(session, record)
   if #mark == 0 then
     return
   end
+  local count = api.nvim_buf_line_count(session.buf)
+  if mark[1] >= count or mark[3].end_row >= count then
+    return
+  end
+  local first = api.nvim_buf_get_lines(session.buf, mark[1], mark[1] + 1, false)[1]
+  local last = mark[1] == mark[3].end_row and first
+    or api.nvim_buf_get_lines(session.buf, mark[3].end_row, mark[3].end_row + 1, false)[1]
+  if mark[2] > #first or mark[3].end_col > #last then
+    return
+  end
   return point(mark[1], mark[2]), point(mark[3].end_row, mark[3].end_col)
 end
 local function contents(session, record)

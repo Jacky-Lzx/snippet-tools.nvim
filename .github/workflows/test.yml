@@ -1,0 +1,22 @@
+name: test
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  neovim:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    strategy:
+      matrix:
+        version: [v0.11.0, stable]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Neovim
+        env:
+          NVIM_VERSION: ${{ matrix.version }}
+        run: |
+          curl -fsSL "https://github.com/neovim/neovim/releases/download/$NVIM_VERSION/nvim-linux-x86_64.tar.gz" -o "$RUNNER_TEMP/nvim.tar.gz"
+          tar -xzf "$RUNNER_TEMP/nvim.tar.gz" -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/nvim-linux-x86_64/bin" >> "$GITHUB_PATH"
+      - run: nvim --version
+      - run: sh tests/run.sh
