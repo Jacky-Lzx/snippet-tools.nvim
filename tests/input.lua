@@ -120,6 +120,29 @@ local ok, err = xpcall(function()
     input("<Tab>again<Tab>!")
     wait("return vim.api.nvim_get_current_line()=='[again]!'")
   end)
+  test("choice changes propagate to computed nodes and preserve dynamic edits", function()
+    lua([[
+      local s=require('snippet_tools')
+      fixture={s.c(1,{'a','b'}),s.t('/'),s.f(function(a)return a[1]:upper()end,{1}),s.t('/'),
+        s.d(2,function(a)
+          local body={s.i(1,'body')};if a[1]=='a' then body[#body+1]=s.t(':label') end
+          return body
+        end,{1}),s.i(0)}
+    ]])
+    input("i<F5><Tab>edited<S-Tab><F6>")
+    wait("return vim.api.nvim_get_current_line()=='b/B/edited'")
+    input("<F7>")
+    wait("return vim.api.nvim_get_current_line()=='a/A/edited:label'")
+  end)
+  test("dynamic regeneration propagates through computed dependencies", function()
+    lua([[
+      local s=require('snippet_tools')
+      fixture={s.i(1,'one'),s.t(':'),s.d(2,function(a)return s.t(a[1]..'!')end,{1}),
+        s.t(':'),s.f(function(a)return a[1]..'?'end,{2}),s.i(0)}
+    ]])
+    input("i<F5>two<Tab>!")
+    wait("return vim.api.nvim_get_current_line()=='two:two!:two!?!'")
+  end)
   test("dynamic nodes generate editable local placeholders", function()
     lua([[
       local s=require('snippet_tools')

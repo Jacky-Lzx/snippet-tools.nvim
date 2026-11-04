@@ -230,7 +230,9 @@ local function arguments(session, record)
 end
 local function remember_arguments(session)
   for _, record in ipairs(session.records) do
-    if record.node.deps and not record.dead then
+    -- Existing records must retain their old arguments so the next sync sees
+    -- changes caused by a rebuilt choice/dynamic subtree.
+    if record.node.deps and record.args == nil and not record.dead then
       record.args = arguments(session, record)
     end
     if record.key and record.kind ~= "mirror" and not record.dead then
