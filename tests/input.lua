@@ -143,6 +143,43 @@ local ok, err = xpcall(function()
     input("i<F5>two<Tab>!")
     wait("return vim.api.nvim_get_current_line()=='two:two!:two!?!'")
   end)
+  test("large literal layouts keep every field independently editable", function()
+    lua([[
+      local s=require('snippet_tools');fixture={}
+      for i=1,100 do
+        fixture[#fixture+1]=s.t('[');fixture[#fixture+1]=s.i(i,'old');fixture[#fixture+1]=s.t(']')
+      end
+      fixture[#fixture+1]=s.i(0)
+    ]])
+    local keys, expected = { "i<F5>" }, {}
+    for i = 1, 100 do
+      keys[#keys + 1] = i .. "<Tab>"
+      expected[#expected + 1] = "[" .. i .. "]"
+    end
+    keys[#keys + 1] = "!"
+    input(table.concat(keys))
+    wait("return vim.api.nvim_get_current_line()==" .. vim.inspect(table.concat(expected) .. "!"))
+  end)
+  test("indexed multiline positions preserve UTF-8 fields and indentation", function()
+    lua([[
+      local s=require('snippet_tools');fixture={s.t('中文\n')}
+      for i=1,30 do
+        fixture[#fixture+1]=s.t('[');fixture[#fixture+1]=s.i(i,'旧');fixture[#fixture+1]=s.t(']\n')
+      end
+      fixture[#fixture+1]=s.i(0)
+      vim.api.nvim_buf_set_lines(0,0,-1,false,{'  '})
+    ]])
+    local keys, expected = { "A<F5>" }, { "  中文" }
+    for i = 1, 30 do
+      keys[#keys + 1] = i .. "<Tab>"
+      expected[#expected + 1] = "  [" .. i .. "]"
+    end
+    keys[#keys + 1] = "!"
+    expected[#expected + 1] = "  !"
+    input(table.concat(keys))
+    wait("return vim.api.nvim_get_current_line()=='  !'")
+    eq(expected, lua("return vim.api.nvim_buf_get_lines(0,0,-1,false)"))
+  end)
   test("dynamic nodes generate editable local placeholders", function()
     lua([[
       local s=require('snippet_tools')

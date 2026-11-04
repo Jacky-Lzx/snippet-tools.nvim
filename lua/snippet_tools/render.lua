@@ -119,8 +119,11 @@ function M.render(body, options)
       elseif node.kind == "insert" or node.kind == "choice" or node.kind == "dynamic" then
         node = definitions[scope][node.index]
         record.node, record.kind, record.key, groups[id] = node, node.kind, id, record
-        local path =
-          vim.list_extend(vim.deepcopy(order or {}), { node.index == 0 and math.huge or node.index })
+        local path = {}
+        for i, part in ipairs(order or {}) do
+          path[i] = part
+        end
+        path[#path + 1] = node.index == 0 and math.huge or node.index
         record.order = path
         local saved = (options.values or {})[id]
         if node.kind == "insert" then

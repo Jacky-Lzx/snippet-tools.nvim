@@ -128,3 +128,28 @@ revisions, harness file hashes, per-round samples and failure diagnostics.
 
 [2026-11-05 results](reports/2026-11-05.md) include correctness counts, P50/P95/P99,
 round variability, repeated-table drift, memory checkpoints and run provenance.
+
+## Editing optimization experiment
+
+`editing.py` reuses the exact PTY fixtures, state validation and UI-flush endpoints
+from `compare.py`, and skips the unrelated collection-scaling microbenchmarks:
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 python3 bench/editing.py --engines snippet-tools \
+  --output bench/results/editing-before
+# Apply and validate a runtime change, keeping configuration and fixtures fixed.
+PYTHONDONTWRITEBYTECODE=1 python3 bench/editing.py \
+  --output bench/results/editing-after
+```
+
+Defaults are four alternating rounds, 100 isolated and 50 configured samples per
+case per round, 20 warmup samples, 20 fresh module loads, and 1,000 lifecycle
+cycles per engine. P95 is the primary tail statistic; P99 at 200 configured
+samples is descriptive. Runtime file hashes distinguish pre-change and post-change
+sources even when working trees are dirty. Keep the input protocol and configuration
+unchanged between phases. The before-only run cannot eliminate time-of-day effects;
+compare the concurrently alternated optimized-engine and LuaSnip rounds as well.
+
+`--profile --output <directory>` records API call counts and instrumented times for
+10×10 expansion and 100-mirror updates after warmup. These diagnostic times include
+instrumentation overhead and are excluded from the formal latency comparison.

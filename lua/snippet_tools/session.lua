@@ -48,21 +48,35 @@ local function top(buf)
   local stack = stacks[buf or api.nvim_get_current_buf()] or {}
   return stack[#stack]
 end
-local function range(session, record)
-  if record.dead or not record.mark or not api.nvim_buf_is_valid(session.buf) then
+local function range(session, record, bounds)
+  if
+    record.dead
+    or not record.mark
+    or (bounds and not bounds.valid)
+    or (not bounds and not api.nvim_buf_is_valid(session.buf))
+  then
     return
   end
   local mark = api.nvim_buf_get_extmark_by_id(session.buf, ns, record.mark, { details = true })
   if #mark == 0 then
     return
   end
-  local count = api.nvim_buf_line_count(session.buf)
+  local count = bounds and bounds.count or api.nvim_buf_line_count(session.buf)
   if mark[1] >= count or mark[3].end_row >= count then
     return
   end
-  local first = api.nvim_buf_get_lines(session.buf, mark[1], mark[1] + 1, false)[1]
-  local last = mark[1] == mark[3].end_row and first
-    or api.nvim_buf_get_lines(session.buf, mark[3].end_row, mark[3].end_row + 1, false)[1]
+  local function line(row)
+    if bounds and bounds.lines[row] then
+      return bounds.lines[row]
+    end
+    local text = api.nvim_buf_get_lines(session.buf, row, row + 1, false)[1]
+    if bounds then
+      bounds.lines[row] = text
+    end
+    return text
+  end
+  local first = line(mark[1])
+  local last = mark[1] == mark[3].end_row and first or line(mark[3].end_row)
   if mark[2] > #first or mark[3].end_col > #last then
     return
   end
@@ -82,6 +96,8 @@ local function descendant(record, parent)
   return false
 end
 local function setmark(session, record, a, b, left, right)
+  record.left_gravity, record.right_gravity = left, right
+  record.highlight_active = record == session.current
   record.mark = api.nvim_buf_set_extmark(session.buf, ns, a[1], a[2], {
     id = record.mark,
     end_row = b[1],
@@ -105,12 +121,18 @@ local function each_record(buf, fn)
   end
 end
 local function gravity(session, target)
-  local start, finish = range(session, target)
+  -- No buffer text changes while gravity is assigned. Share bounds/line reads
+  -- only for this synchronous pass; never keep them across edits or callbacks.
+  local bounds = { valid = api.nvim_buf_is_valid(session.buf), lines = {} }
+  if bounds.valid then
+    bounds.count = api.nvim_buf_line_count(session.buf)
+  end
+  local start, finish = range(session, target, bounds)
   if not start then
     return
   end
   each_record(session.buf, function(owner, record)
-    local a, b = range(owner, record)
+    local a, b = range(owner, record, bounds)
     if a then
       local left, right = false, true
       if owner == session and descendant(target, record) then
@@ -120,7 +142,13 @@ local function gravity(session, target)
       elseif le(finish, a) then
         left, right = true, true
       end
-      setmark(owner, record, a, b, left, right)
+      if
+        record.left_gravity ~= left
+        or record.right_gravity ~= right
+        or record.highlight_active ~= (record == owner.current)
+      then
+        setmark(owner, record, a, b, left, right)
+      end
     end
   end)
 end
@@ -143,7 +171,24 @@ local function format_model(session, model)
     record.start, record.finish = map[record.start], map[record.finish]
   end
   model.text = table.concat(parts)
+  model.line_starts = { 0 }
+  for offset in model.text:gmatch("()\n") do
+    model.line_starts[#model.line_starts + 1] = offset
+  end
   return model
+end
+local function model_position(model, offset, origin)
+  local starts = model.line_starts
+  local low, high = 1, #starts
+  while low < high do
+    local middle = math.floor((low + high + 1) / 2)
+    if starts[middle] <= offset then
+      low = middle
+    else
+      high = middle - 1
+    end
+  end
+  return point(origin[1] + low - 1, offset - starts[low] + (low == 1 and origin[2] or 0))
 end
 local function saved_text(session, text)
   local lines = vim.split(text, "\n", { plain = true })
@@ -177,23 +222,31 @@ local function options(session, scope, order)
 end
 local function install(session, model, origin, parent)
   for _, record in ipairs(model.records) do
-    record.rank = #session.records + 1
-    if record.parent == nil then
-      record.parent = parent or session.root
-    end
-    record.path = vim.list_extend(vim.deepcopy(record.parent.path or {}), { record.ordinal })
-    session.records[#session.records + 1] = record
-    setmark(
-      session,
-      record,
-      position(model.text, record.start, origin),
-      position(model.text, record.finish, origin),
-      false,
-      true
-    )
-    if record.key and record.kind ~= "mirror" then
-      session.groups[record.key] = record
-      record.initial_value = contents(session, record)
+    -- Literal text cannot be edited or recomputed independently. Its enclosing
+    -- placeholder/root already tracks it; an extra extmark only adds work.
+    if record.kind ~= "text" then
+      record.rank = #session.records + 1
+      if record.parent == nil then
+        record.parent = parent or session.root
+      end
+      record.path = {}
+      for i, value in ipairs(record.parent.path or {}) do
+        record.path[i] = value
+      end
+      record.path[#record.path + 1] = record.ordinal
+      session.records[#session.records + 1] = record
+      setmark(
+        session,
+        record,
+        model_position(model, record.start, origin),
+        model_position(model, record.finish, origin),
+        false,
+        true
+      )
+      if record.key and record.kind ~= "mirror" then
+        session.groups[record.key] = record
+        record.initial_value = model.text:sub(record.start + 1, record.finish)
+      end
     end
   end
   local live = {}
@@ -228,7 +281,7 @@ local function arguments(session, record)
   end
   return args
 end
-local function remember_arguments(session)
+local function remember_arguments(session, initial)
   for _, record in ipairs(session.records) do
     -- Existing records must retain their old arguments so the next sync sees
     -- changes caused by a rebuilt choice/dynamic subtree.
@@ -236,7 +289,7 @@ local function remember_arguments(session)
       record.args = arguments(session, record)
     end
     if record.key and record.kind ~= "mirror" and not record.dead then
-      record.last_value = contents(session, record)
+      record.last_value = initial and record.initial_value or contents(session, record)
     end
   end
 end
@@ -591,7 +644,7 @@ function M.expand(body, opts)
   end
   stacks[buf] = stacks[buf] or {}
   table.insert(stacks[buf], session)
-  setmark(session, session.root, a, position(model.text, #model.text, a), false, true)
+  setmark(session, session.root, a, model_position(model, #model.text, a), false, true)
   install(session, model, a)
   if not session.groups["root/0"] then
     local final = {
@@ -605,11 +658,13 @@ function M.expand(body, opts)
     }
     session.groups[final.key] = final
     session.records[#session.records + 1] = final
-    local finish = position(model.text, #model.text, a)
+    local finish = model_position(model, #model.text, a)
     setmark(session, final, finish, finish, true, true)
   end
   session.nonempty, session.seq = model.text ~= "", vim.fn.undotree().seq_cur
-  remember_arguments(session)
+  -- The freshly inserted model is authoritative; do not read every field back
+  -- through extmarks before any external edit can occur.
+  remember_arguments(session, true)
   attach(buf)
   local first = navigation(session)[1]
   select(session, first)
