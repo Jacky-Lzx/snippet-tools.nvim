@@ -126,6 +126,9 @@ revisions, harness file hashes, per-round samples and failure diagnostics.
 
 ## Local measurement
 
+[2026-11-05 editing optimization](reports/2026-11-05-optimization.md) compares a fresh
+baseline, optimized snippet-tools and LuaSnip under the same post-migration config.
+
 [2026-11-05 results](reports/2026-11-05.md) include correctness counts, P50/P95/P99,
 round variability, repeated-table drift, memory checkpoints and run provenance.
 
@@ -153,3 +156,13 @@ compare the concurrently alternated optimized-engine and LuaSnip rounds as well.
 `--profile --output <directory>` records API call counts and instrumented times for
 10×10 expansion and 100-mirror updates after warmup. These diagnostic times include
 instrumentation overhead and are excluded from the formal latency comparison.
+
+Generate an optimization report and interactive chart from those saved runs:
+
+```sh
+python3 bench/editing_report.py bench/results/editing-before/results.json \
+  bench/results/editing-after/results.json --output bench/results/editing-comparison
+```
+
+The report verifies the timed protocol hashes, configuration/engine revisions,
+complete sample counts and absence of validation failures before rendering.

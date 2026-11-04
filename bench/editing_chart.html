@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Snippet editing optimization</title><style>
+html,body{margin:0;background:transparent;color:var(--foreground,CanvasText);font-family:var(--font-sans,system-ui)}
+#editing-comparison{width:100%;box-sizing:border-box;font-size:14px}
+#editing-comparison *{box-sizing:border-box}
+.controls{display:flex;gap:18px;flex-wrap:wrap;align-items:end;margin-bottom:16px}
+.controls label{display:grid;gap:5px}
+select{font:inherit;color:var(--foreground,CanvasText);background:var(--secondary,Canvas);border:1px solid var(--border,ButtonBorder);border-radius:var(--radius,6px);padding:7px 10px;min-height:40px}
+.legend{display:flex;gap:20px;flex-wrap:wrap;margin-bottom:16px;font-size:13px}
+.legend span{display:flex;align-items:center;gap:7px}
+.dot{width:10px;height:10px;border-radius:2px;display:inline-block}
+.new{background:var(--chart-1,Highlight)}.old{background:var(--chart-2,GrayText)}
+.row{display:grid;grid-template-columns:145px 1fr;gap:12px;padding:9px 0;border-bottom:1px solid var(--border,ButtonBorder)}
+.name{font-weight:500;align-self:center}.comparison{display:grid;gap:6px}
+.series{display:grid;grid-template-columns:1fr 70px;gap:10px;align-items:center}
+.track{height:9px;background:color-mix(in srgb,var(--foreground,CanvasText) 5%,transparent);border-radius:2px}
+.bar{height:9px;border-radius:2px}
+.number{font-family:var(--font-mono,monospace);text-align:right;font-variant-numeric:tabular-nums}
+.axis{display:flex;justify-content:space-between;margin:10px 80px 0 157px;color:var(--muted-foreground,GrayText);font-size:12px}
+.detail{font-size:12px;color:var(--muted-foreground,GrayText);line-height:1.5;margin-top:14px}
+#sample-count{font-size:12px;color:var(--muted-foreground,GrayText);margin-left:auto}
+@media(max-width:500px){.row{grid-template-columns:1fr;gap:7px}.axis{margin-left:0}.controls{gap:12px}select{min-height:44px}#sample-count{margin-left:0;width:100%}}
+
+.before{background:var(--chart-3,GrayText)}
+</style></head>
+<body><main id="editing-comparison">
+<div class="controls">
+<label>测量范围<select id="track"><option value="isolated">等价定义 · 隔离测试</option><option value="configured">你的当前配置</option><option value="startup">加载与初始化</option></select></label>
+<label>统计值<select id="metric"><option value="median">中位数 P50</option><option value="p95">P95</option><option value="p99">P99</option></select></label>
+<label>刻度<select id="scale"><option value="shared">共同刻度</option><option value="individual">每项独立刻度</option></select></label>
+<span id="sample-count" aria-live="polite"></span></div>
+<div class="legend"><span><i class="dot before"></i>snippet-tools 优化前</span><span><i class="dot new"></i>优化后</span><span><i class="dot old"></i>LuaSnip</span></div>
+<div id="rows" role="group" aria-label="三个版本的操作延迟"></div>
+<div class="axis" id="axis"></div><div class="detail" id="detail"></div>
+</main><script>
+const measurements=__BENCH_DATA__;
+const root=document.getElementById('editing-comparison');
+const names={plain_input:'普通输入',bold_accept:'确认 bold',link_jump:'跳转 link 字段',figure_update_jump:'figure 联动并跳转',table_2x2:'生成 2×2 表格',table_10x10:'生成 10×10 表格',choice_toggle:'切换 choice',undo_field_edit:'撤销字段编辑',simple_expand:'展开简单模板',jump_final:'跳到最终位置',mirrors_10:'更新 10 个镜像',mirrors_100:'更新 100 个镜像',require_ms:'加载模块',setup_ms:'初始化'};
+const fmt=v=>v<1?v.toFixed(3):v.toFixed(2);
+function render(){
+ const track=root.querySelector('#track').value,metric=root.querySelector('#metric').value,individual=root.querySelector('#scale').value==='individual';
+ const rows=measurements.filter(r=>r.track===track),peak=Math.max(.01,...rows.flatMap(r=>r.series.map(s=>s.stats[metric]))),limit=Math.ceil(peak*10)/10;
+ const host=root.querySelector('#rows');host.replaceChildren();
+ for(const item of rows){
+  const row=document.createElement('div');row.className='row';
+  const label=document.createElement('div');label.className='name';label.textContent=names[item.name.split('/')[0]]||item.name;
+  const bars=document.createElement('div');bars.className='comparison';
+  const rowLimit=individual?Math.max(...item.series.map(s=>s.stats[metric])):limit;
+  item.series.forEach((data,i)=>{
+   const series=document.createElement('div');series.className='series';const trackEl=document.createElement('div');trackEl.className='track';
+   const bar=document.createElement('div');bar.className='bar '+['before','new','old'][i];bar.style.width=(data.stats[metric]/rowLimit*100)+'%';trackEl.append(bar);
+   const value=document.createElement('span');value.className='number';value.textContent=fmt(data.stats[metric]);
+   series.setAttribute('aria-label',['优化前','优化后','LuaSnip'][i]+' '+fmt(data.stats[metric])+' ms');series.append(trackEl,value);bars.append(series);
+  });row.append(label,bars);host.append(row);
+ }
+ const axis=root.querySelector('#axis');axis.replaceChildren();
+ if(!individual)for(let i=0;i<=4;i++){const t=document.createElement('span');t.textContent=fmt(limit*i/4);axis.append(t)}
+ const counts=[...new Set(rows.flatMap(r=>r.series.map(s=>s.stats.n)))];
+ root.querySelector('#sample-count').textContent='每项 / 版本 n='+counts.join('、')+' · 失败 0';
+ root.querySelector('#detail').textContent=(individual?'各项独立刻度；数值为 ms。':'共同刻度 · ms · 越短越好。')+(track==='startup'
+  ?'新进程与新字节码缓存，OS 文件缓存已预热；每版本 20 次，不代表完整 Neovim 启动。'
+  :track==='configured'?'输入至验证后 UI 刷新。包含当前双引擎集成与重复编辑状态；choice 焦点有差异。P99 样本较少，仅作描述。'
+  :'输入至验证后 UI 刷新。等价 Lua 定义、即时镜像更新。优化后与 LuaSnip 四轮交替；优化前基线较早采集，微小差异需谨慎。');
+}
+for(const id of ['track','metric','scale'])root.querySelector('#'+id).addEventListener('change',render);render();
+</script></body></html>
