@@ -1,9 +1,10 @@
 """Fast checks for the measurement transport and statistics (no Neovim needed)."""
+import errno
 import io
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
-from compare import summary
+from compare import InputProcess, summary
 from rpc import Client, answer_terminal, pack, unpack
 
 
@@ -33,6 +34,20 @@ class ProtocolTests(unittest.TestCase):
         self.assertEqual(19, stats["p95"])
         self.assertEqual(20, stats["p99"])
         self.assertIsNone(summary([]))
+
+    def test_editor_exits_before_retrying_temporary_cache_cleanup(self):
+        proc = InputProcess.__new__(InputProcess)
+        proc.closed = False
+        proc.client, proc.process, proc.temporary = Mock(), Mock(), Mock()
+        proc.client.lua.side_effect = EOFError("editor exited")
+        proc.process.poll.return_value = None
+        proc.temporary.cleanup.side_effect = [OSError(errno.ENOTEMPTY, "cache worker"), None]
+        with patch("compare.time.sleep"):
+            proc.close()
+        proc.client.lua.assert_called_once_with("vim.cmd('qa!')")
+        proc.process.wait.assert_called_once_with(timeout=2)
+        proc.process.terminate.assert_not_called()
+        self.assertEqual(2, proc.temporary.cleanup.call_count)
 
     def test_ui_completion_requires_matching_validation(self):
         client = Client.__new__(Client)

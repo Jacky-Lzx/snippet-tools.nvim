@@ -7,6 +7,7 @@ configuration files are never changed. Outputs include every raw sample.
 import argparse
 import atexit
 import datetime
+import errno
 import fcntl
 import hashlib
 import json
@@ -180,16 +181,32 @@ class InputProcess:
         self.closed=True
         atexit.unregister(self.close)
         if hasattr(self, "client"):
+            # The native TUI may be a frontend for an embedded editor. Ask the
+            # editor to exit before removing caches that its workers still write.
+            try:
+                self.client.lua("vim.cmd('qa!')")
+            except (EOFError, OSError, RuntimeError, TimeoutError):
+                pass
             self.client.close()
         if hasattr(self, "process") and self.process.poll() is None:
-            self.process.terminate()
             try:
                 self.process.wait(timeout=2)
             except subprocess.TimeoutExpired:
-                self.process.kill(); self.process.wait()
+                self.process.terminate()
+                try:
+                    self.process.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    self.process.kill(); self.process.wait()
         if hasattr(self, "master"):
             os.close(self.master)
-        self.temporary.cleanup()
+        for attempt in range(3):
+            try:
+                self.temporary.cleanup()
+                break
+            except OSError as error:
+                if error.errno != errno.ENOTEMPTY or attempt == 2:
+                    raise
+                time.sleep(.02)  # Exit/cache race only; outside every timed interval.
 
 
 def input_run(args, engine, track, round_id):
