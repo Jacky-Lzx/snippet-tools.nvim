@@ -5,6 +5,7 @@ native build, or background process is required.
 
 - LSP-style tabstops, defaults, mirrors, nested placeholders, choices and variables.
 - Lua function nodes and dynamic nodes with editable local placeholders.
+- Readable `fmt` / `fmta` templates with positional and named node slots.
 - Nested expansion with navigation back to the enclosing session.
 - Choice alternatives and regenerated dynamic fields retain user input by local index.
 - Literal triggers, Lua pattern captures, conditions, priorities and automatic expansion.
@@ -112,6 +113,61 @@ a smaller generated structure. Use stable indices for semantically stable fields
 
 See [examples/tex.lua](examples/tex.lua) for Beamer columns and
 [examples/markdown.lua](examples/markdown.lua) for generated tables.
+
+## Readable templates
+
+`s.fmt(template, fields, opts?)` uses `{}` slots; `s.fmta(...)` uses `<>`, which
+keeps LaTeX braces literal. Both return ordinary node lists and also work inside
+choices, insert defaults and dynamic callbacks.
+
+```lua
+local s = require("snippet_tools")
+
+-- Positional slots: {}, {2}, {1} refer to entries in the fields table.
+local fn = s.fmt([[
+  function {}({})
+    {}
+  end
+]], { s.i(1, "name"), s.i(2), s.i(0) })
+
+-- Named slots make the template and its fields easier to match.
+local environment = s.fmta([[
+  \begin{<env>}
+    <body>
+  \end{<env>}
+]], { env = s.i(1, "table"), body = s.i(0) })
+
+s.add("tex", { { trigger = "begin", body = environment } })
+```
+
+Fields can be nodes, literal strings or node lists. A single node can be passed
+directly instead of a fields table. Slot numbers index this table, starting at
+one; they do not change node indices. Named slots leave the automatic slot
+counter unchanged; an explicit number resets it, so `{} {3} {}` selects entries
+1, 3 and 4. Reusing an indexed field uses the engine's normal mirror behavior,
+without adding another navigation stop. No LuaSnip `repeat_duplicates` option is
+needed. Nodes and field tables remain reusable and are not modified by formatting.
+
+Double either delimiter to insert it literally: `{{` / `}}` with `fmt`, or
+`<<` / `>>` with `fmta`. Delimiters inside inserted fields are not parsed.
+Template text and string fields are literal text, including `$1`, backslashes
+and braces; LSP snippet syntax belongs in `expand(string)` or node definitions.
+
+Options apply to the template before inserting fields:
+
+| Option | Default | Behavior |
+| --- | --- | --- |
+| `delimiters` | `"{}"` / `"<>"` | Two distinct ASCII delimiter characters |
+| `trim_empty` | `true` | Remove surrounding whitespace-only lines |
+| `dedent` | `true` | Remove common leading whitespace from nonblank lines |
+| `indent_string` | `""` | Convert repeated indentation units at line starts into tabs, after dedenting |
+| `strict` | `true` | Reject fields that the template does not use |
+
+Missing fields and malformed delimiters always raise an error. Set
+`strict = false` to permit unused fields, or disable `dedent` / `trim_empty` to
+preserve the template's layout exactly. Tabs then follow the engine's normal
+buffer indentation settings. The module is loaded on first use; it is also
+available as `require("snippet_tools.fmt").fmt` / `.fmta`.
 
 ## Triggers and conditions
 

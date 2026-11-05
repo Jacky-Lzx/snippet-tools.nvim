@@ -44,6 +44,37 @@ Each choice branch/dynamic result has local indices. Dependencies refer to the
 enclosing scope; args are strings. Declare all dependencies and use stable local
 indices to preserve edited generated fields. LSP nesting shares its string scope.
 
+TEMPLATES                                             *snippet-tools-fmt*
+                                                      *snippet-tools-fmta*
+
+fmt(template, fields, opts?) uses {} slots; fmta(...) uses <> slots, leaving
+LaTeX braces literal. Both return native node lists. Example: >lua
+  local s = require('snippet_tools')
+  local body = s.fmta([[
+    \begin{<env>}
+      <body>
+    \end{<env>}
+  ]], {env = s.i(1, 'table'), body = s.i(0)})
+<
+Slots may be automatic ({}), numbered ({2}) or named ({name}). Numbers index
+fields starting at one, independently of node indices. Explicit numbers reset
+the automatic counter; names leave it unchanged. Repeated indexed fields mirror
+normally without another navigation stop. Fields can be nodes, literal strings
+or node lists; a single node can replace the fields table.
+
+Double delimiters to escape them: {{ / }} with fmt, << / >> with fmta.
+Inserted fields are not parsed. Template text and string fields are literal,
+including $1 and backslashes. No LuaSnip dependency or repeat_duplicates option.
+
+Options: delimiters="{}" (fmt) or "<>" (fmta), trim_empty=true, dedent=true,
+indent_string="", strict=true. Delimiters must be two distinct ASCII characters.
+trim_empty removes surrounding whitespace-only lines; dedent removes common
+indentation; indent_string converts repeated line-prefix units into tabs after
+dedenting. Fields/options are not mutated. Missing fields and malformed templates
+always error; strict=false permits unused fields. Use trim_empty=false and
+dedent=false to preserve layout. Formatting loads lazily on first call; direct
+module access is require('snippet_tools.fmt').fmt / .fmta.
+
 API                                                   *snippet-tools-api*
 
 expand(body, opts)     insert body; replace selected active field if applicable

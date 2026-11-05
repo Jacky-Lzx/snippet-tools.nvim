@@ -99,6 +99,36 @@ local ok, err = xpcall(function()
     wait("return vim.api.nvim_get_current_line()=='60/38:text'")
     eq(calls, lua("return calls"))
   end)
+  test("formatted named fields mirror live without adding navigation stops", function()
+    lua([[
+      local s=require('snippet_tools')
+      fixture=s.fmta([=[
+        \begin{<env>}
+          <body>
+        \end{<env>}
+      ]=],{env=s.i(1,'table'),body=s.i(0)})
+    ]])
+    input("i<F5>figure<Tab>中文")
+    wait("return vim.api.nvim_get_current_line()=='  中文' and not require('snippet_tools').active()")
+    eq(
+      { "\\begin{figure}", "  中文", "\\end{figure}" },
+      lua("return vim.api.nvim_buf_get_lines(0,0,-1,false)")
+    )
+  end)
+  test("fmt templates compose choices, dynamic regeneration and indentation", function()
+    lua([[
+      local s=require('snippet_tools')
+      fixture=s.fmt('  {}:{}/{}\n    {}',{
+        s.c(1,{'a','b'}),
+        s.d(2,function(a)return s.fmta('[<value>]',{value=s.i(1,a[1])})end,{1}),
+        s.f(function(a)return a[1]:upper()end,{1}),
+        s.i(0),
+      },{dedent=false,indent_string='  '})
+    ]])
+    input("i<F5><F6><Tab>X<Tab>body")
+    wait("return vim.api.nvim_get_current_line()=='    body' and not require('snippet_tools').active()")
+    eq({ "  b:[X]/B", "    body" }, lua("return vim.api.nvim_buf_get_lines(0,0,-1,false)"))
+  end)
   test("plain choice alternatives preserve edited text", function()
     lua([[fixture='${1|red,blue|}-$1$0']])
     input("i<F5>green<F6>")

@@ -49,6 +49,15 @@ function _G.snippet_tui_reset(kind)
     }
   elseif kind == "nested" then
     fixture = "[${1:outer}]=${1}:${2:next}$0"
+  elseif kind == "formatted" then
+    fixture = s.fmta(
+      [[
+      \begin{<env>}
+        <body>
+      \end{<env>}
+    ]],
+      { env = s.i(1, "table"), body = s.i(0) }
+    )
   elseif kind == "auto" then
     s.add("lua", { { trigger = "mk", body = "[$1]$0", auto = true } })
   elseif kind == "display" or kind == "display_eol" or kind == "display_overflow" then

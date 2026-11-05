@@ -321,4 +321,10 @@ for name, fn in pairs(require("snippet_tools.nodes")) do
   end
 end
 M.t, M.i, M.c, M.f, M.d, M.rep = M.text, M.insert, M.choice, M.func, M.dynamic, M.mirror
+function M.fmt(template, args, opts)
+  return require("snippet_tools.fmt").fmt(template, args, opts)
+end
+function M.fmta(template, args, opts)
+  return require("snippet_tools.fmt").fmta(template, args, opts)
+end
 return M

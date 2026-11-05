@@ -87,6 +87,17 @@ with tempfile.TemporaryDirectory(prefix="snippet-tools-tui-") as temporary:
         send(b"X\t\tY\t!")
         wait(lambda s: s["lines"] == ["[(X)]=(X):Y!"] and not s["session"]["active"], "nested burst")
 
+        reset("formatted")
+        send(b"i" + f5)
+        wait(lambda s: s["mode"] == "s" and s["lines"] == ["\\begin{table}", "  ", "\\end{table}"]
+             and "\\begin{table}" in s["screen"], "formatted environment rendered")
+        send(b"figure")
+        wait(lambda s: s["lines"] == ["\\begin{figure}", "  ", "\\end{figure}"]
+             and "\\begin{figure}" in s["screen"], "repeated named placeholder mirrors through terminal")
+        send(b"\tBody")
+        wait(lambda s: s["lines"] == ["\\begin{figure}", "  Body", "\\end{figure}"]
+             and not s["session"]["active"], "formatted final stop")
+
         reset("auto")
         send(b"imk")
         wait(lambda s: s["lines"] == ["[]"] and s["mode"] == "i", "auto expansion")
