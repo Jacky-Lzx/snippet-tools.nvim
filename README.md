@@ -237,6 +237,56 @@ Highlights are `SnippetToolsPlaceholder` and `SnippetToolsActive`.
 The `User` events `SnippetToolsExpand` and `SnippetToolsEnter` expose expansion
 and field-entry transitions for integrations; their data includes `bufnr`.
 
+## Node display
+
+`setup({ ext_opts = ... })` configures decorations by node type and state.
+Types are `insert`, `choice`, `dynamic`, `mirror` and `["function"]`.
+`active` is the current node of the innermost session; all other live nodes are
+`passive`, including the current field of a suspended parent session.
+
+```lua
+require("snippet_tools").setup({
+  ext_opts = {
+    insert = {
+      passive = {
+        virt_text = { { "●", "Comment" } },
+        virt_text_pos = "inline",
+        sign_text = "●",
+        sign_hl_group = "Comment",
+      },
+      active = {
+        virt_text = { { "●", "Identifier" } },
+        sign_hl_group = "Identifier",
+      },
+    },
+    choice = {
+      passive = { virt_text = { { "◆", "Comment" } }, sign_text = "◆", sign_hl_group = "Comment" },
+      active = { virt_text = { { "◆", "Type" } }, sign_hl_group = "Type" },
+    },
+  },
+})
+```
+
+Active options inherit configured passive options, with active overrides applied
+last. Nested tables such as `virt_text` replace the whole value. Use
+`virt_text = {}` to remove inherited virtual text, or `false` to remove an
+inherited display option (for example `hl_group = false` or `sign_text = false`).
+`hl_eol` and `virt_text_hide` retain their normal boolean meanings.
+
+Supported extmark options are `hl_group`, `hl_eol`, `hl_mode`, `virt_text`,
+`virt_text_pos`, `virt_text_win_col`, `virt_text_hide`, `priority`, `sign_text`,
+`sign_hl_group`, `number_hl_group`, `line_hl_group` and `cursorline_hl_group`.
+Signs appear when the window's `signcolumn` permits them. Virtual text defaults
+to Neovim's end-of-line placement; `inline` also identifies empty fields at their
+exact position. Decorations do not modify buffer text and disappear when their
+node or session is removed. Root `$0` uses the insert style until the session ends.
+
+Without `ext_opts`, existing highlights remain unchanged and no icons or signs
+are added. Default priorities are 130 for active nodes and 120 for passive nodes.
+Range/gravity/lifecycle options remain owned by the engine and cannot be set
+through `ext_opts`. This API uses string node types and two states; it does not
+accept LuaSnip's numeric types, per-node overrides or visited/history states.
+
 ## Compatibility boundaries
 
 Supported string syntax includes `$1`, `${1:default}`, `${1|one,two|}`, `$0`,

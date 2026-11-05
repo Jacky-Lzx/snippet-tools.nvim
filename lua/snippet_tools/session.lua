@@ -1,6 +1,7 @@
 local api = vim.api
 local M = {}
 local ns = api.nvim_create_namespace("snippet-tools")
+local display = require("snippet_tools.display")
 local stacks, attached, tickets, marks = {}, {}, {}, {}
 local serial, mutating = 0, false
 local fold_locks = {}
@@ -97,18 +98,21 @@ local function descendant(record, parent)
 end
 local function setmark(session, record, a, b, left, right)
   record.left_gravity, record.right_gravity = left, right
-  record.highlight_active = record == session.current
-  record.mark = api.nvim_buf_set_extmark(session.buf, ns, a[1], a[2], {
-    id = record.mark,
-    end_row = b[1],
-    end_col = b[2],
-    right_gravity = left,
-    end_right_gravity = right,
-    undo_restore = false,
-    hl_group = record == session.current and "SnippetToolsActive"
-      or (record.key and record.kind ~= "mirror" and "SnippetToolsPlaceholder" or nil),
-    priority = record == session.current and 130 or 120,
-  })
+  record.highlight_active = session == top(session.buf) and record == session.current
+  record.mark = api.nvim_buf_set_extmark(
+    session.buf,
+    ns,
+    a[1],
+    a[2],
+    vim.tbl_extend("force", {}, display.options(record.kind, record.highlight_active), {
+      id = record.mark,
+      end_row = b[1],
+      end_col = b[2],
+      right_gravity = left,
+      end_right_gravity = right,
+      undo_restore = false,
+    })
+  )
   marks[session.buf] = marks[session.buf] or {}
   marks[session.buf][record.mark], record.owner = record, session
 end
@@ -145,7 +149,7 @@ local function assign_gravity(session, target, start, finish, owner, record, a, 
   if
     record.left_gravity ~= left
     or record.right_gravity ~= right
-    or record.highlight_active ~= (record == owner.current)
+    or record.highlight_active ~= (owner == top(owner.buf) and record == owner.current)
   then
     setmark(owner, record, a, b, left, right)
   end

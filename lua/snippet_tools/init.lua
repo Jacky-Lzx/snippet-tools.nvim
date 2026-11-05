@@ -224,6 +224,7 @@ function M.setup(options)
       "snippet-tools: invalid keymap action " .. tostring(action)
     )
   end
+  require("snippet_tools.display").configure(options.ext_opts)
   M.dispose()
   config = { auto = options.auto ~= false, keymap = options.keymap or {}, enabled = options.enabled }
   group = vim.api.nvim_create_augroup("SnippetTools", { clear = true })

@@ -570,6 +570,108 @@ local ok, err = xpcall(function()
     eq({ "pre", "X", "Y!" }, lua("return vim.api.nvim_buf_get_lines(0,0,-1,false)"))
     eq(true, lua("return vim.wo.foldenable"))
   end)
+  local function configure_display()
+    lua([[
+      require('snippet_tools').setup({
+        keymap={['<Tab>']='jump_forward',['<S-Tab>']='jump_backward',['<F6>']='choice_next'},
+        ext_opts={
+          insert={
+            passive={virt_text={{'i','Comment'}},sign_text='i',sign_hl_group='Comment'},
+            active={virt_text={{'I','Identifier'}},sign_text='I',sign_hl_group='Identifier'},
+          },
+          choice={
+            passive={virt_text={{'c','Comment'}},sign_text='c',sign_hl_group='Comment'},
+            active={virt_text={{'C','Type'}},sign_text='C',sign_hl_group='Type'},
+          },
+        },
+      })
+      function decorations()
+        local result={}
+        local ns=vim.api.nvim_get_namespaces()['snippet-tools']
+        for _,mark in ipairs(vim.api.nvim_buf_get_extmarks(0,ns,0,-1,{details=true})) do
+          local d=mark[4]
+          if d.virt_text then
+            result[#result+1]={mark[2],mark[3],d.virt_text[1][1],d.sign_text:match('%S+'),d.priority,d.hl_group}
+          end
+        end
+        return result
+      end
+    ]])
+  end
+  test("node decorations follow field and choice transitions and clear on exit", function()
+    configure_display()
+    lua([[fixture='$1\n${2|red,blue|}\n$0']])
+    input("i<F5>")
+    wait("return vim.api.nvim_get_mode().mode=='i' and require('snippet_tools').active()")
+    eq({
+      { 0, 0, "I", "I", 130, "SnippetToolsActive" },
+      { 1, 0, "c", "c", 120, "SnippetToolsPlaceholder" },
+      { 2, 0, "i", "i", 120, "SnippetToolsPlaceholder" },
+    }, lua("return decorations()"))
+    input("X<Tab><F6>")
+    wait("return vim.api.nvim_get_current_line()=='blue' and vim.api.nvim_get_mode().mode=='s'")
+    eq({
+      { 0, 0, "i", "i", 120, "SnippetToolsPlaceholder" },
+      { 1, 0, "C", "C", 130, "SnippetToolsActive" },
+      { 2, 0, "i", "i", 120, "SnippetToolsPlaceholder" },
+    }, lua("return decorations()"))
+    input("<Tab>body")
+    wait("return vim.api.nvim_get_current_line()=='body' and not require('snippet_tools').active()")
+    eq({}, lua("return decorations()"))
+  end)
+  test("nested sessions suspend and restore their parent decorations", function()
+    configure_display()
+    lua([[fixture='${1:outer}-$0']])
+    input("i<F5>")
+    wait("return vim.api.nvim_get_mode().mode=='s'")
+    lua([[fixture='(${1:inner})$0']])
+    input("<F5>")
+    wait("return vim.api.nvim_get_mode().mode=='s' and require('snippet_tools').inspect().depth==2")
+    eq(
+      { "i", "I", "i", "i" },
+      lua([[local out={};for _,d in ipairs(decorations())do out[#out+1]=d[3] end;return out]])
+    )
+    input("X<Tab>")
+    wait("return require('snippet_tools').inspect().depth==1 and vim.api.nvim_get_current_line()=='(X)-'")
+    eq({ "I", "i" }, lua([[local out={};for _,d in ipairs(decorations())do out[#out+1]=d[3] end;return out]]))
+    lua([[require('snippet_tools').stop()]])
+    eq({}, lua("return decorations()"))
+  end)
+  test("display options inherit, clear and reject edits to tracking options", function()
+    lua([[
+      local s=require('snippet_tools')
+      s.setup({ext_opts={insert={
+        passive={virt_text={{'passive','Comment'}},sign_text='p',hl_group='Comment'},
+        active={virt_text={},sign_text=false,hl_group=false},
+      }}})
+      fixture='${1:field}$0'
+    ]])
+    input("i<F5>")
+    wait("return vim.api.nvim_get_mode().mode=='s'")
+    lua([[
+      local s=require('snippet_tools')
+      local ns=vim.api.nvim_get_namespaces()['snippet-tools']
+      local plain, passive = 0
+      for _,mark in ipairs(vim.api.nvim_buf_get_extmarks(0,ns,0,-1,{details=true})) do
+        local d=mark[4]
+        if mark[3]==0 and d.end_col==5 then
+          assert(not d.hl_group and not d.sign_text and #(d.virt_text or {})==0, vim.inspect(d))
+          plain=plain+1
+        elseif d.sign_text then passive=d end
+      end
+      assert(plain==2 and passive and passive.virt_text[1][1]=='passive')
+      for _,opts in ipairs({
+        {insert={active={right_gravity=true}}},
+        {insert={active={end_row=1}}},
+        {unknown={active={}}},
+        {insert={visited={}}},
+        {insert={active={virt_text='wrong'}}},
+      }) do
+        assert(not pcall(s.setup,{ext_opts=opts}))
+        assert(s.active(), 'invalid display config must not stop the current session')
+      end
+    ]])
+  end)
   local completion = vim.env.COMPLETION_TOOLS_PATH
   if completion then
     lua("vim.opt.runtimepath:append(...)", completion)

@@ -107,6 +107,22 @@ with tempfile.TemporaryDirectory(prefix="snippet-tools-tui-") as temporary:
             wait(lambda s: s["mode"] == "s" and not s["menu"], "completion placeholder selection")
             send(b"user\t!")
             wait(lambda s: s["lines"] == ["hello user / user!"] and not s["session"]["active"], "completion burst")
+        reset("display")
+        send(b"i" + f5)
+        shown = wait(lambda s: s["session"]["active"] and s["mode"] == "i"
+                     and "I" in s["display_rows"][0] and "cred" in s["display_rows"][1],
+                     "empty field and passive choice markers rendered")
+        assert shown["display_rows"][0].count("I") == 2, shown  # Sign and inline marker.
+        send(b"X\t")
+        shown = wait(lambda s: s["mode"] == "s" and "Cred" in s["display_rows"][1]
+                     and "iX" in s["display_rows"][0], "active choice marker and passive insert rendered")
+        assert shown["display_rows"][1].count("C") == 2, shown
+        send(f6)
+        wait(lambda s: "Cblue" in s["display_rows"][1], "choice rebuild retains decoration")
+        send(b"\tBody")
+        wait(lambda s: s["lines"] == ["X", "blue", "Body"] and not s["session"]["active"]
+             and "I" not in s["display_rows"][0] and "C" not in s["display_rows"][1]
+             and "i" not in "".join(s["display_rows"]), "all field markers removed on finish")
         if env.get("SNIPPET_TUI_TRACE"):
             Path(env["SNIPPET_TUI_TRACE"]).write_text(json.dumps(frames, ensure_ascii=False, indent=2))
         print(f"PTY: {len(frames)} intermediate states passed")

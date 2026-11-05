@@ -87,6 +87,27 @@ COMMANDS                                              *snippet-tools-commands*
 Highlights: SnippetToolsPlaceholder and SnippetToolsActive.
 User events: SnippetToolsExpand and SnippetToolsEnter; data includes bufnr.
 
+DISPLAY                                               *snippet-tools-ext_opts*
+
+setup({ext_opts={insert={active={...},passive={...}},choice={...}}}) configures
+node decorations. Types: insert, choice, dynamic, mirror and ["function"].
+active is the innermost session's current node; other live nodes are passive.
+Suspended parent fields become passive and reactivate when a child finishes.
+
+Supported visual extmark options: hl_group, hl_eol, hl_mode, virt_text,
+virt_text_pos, virt_text_win_col, virt_text_hide, priority, sign_text,
+sign_hl_group, number_hl_group, line_hl_group, cursorline_hl_group.
+Active options inherit configured passive options. Arrays such as virt_text
+replace rather than concatenate. false removes an inherited option, except for
+the boolean options hl_eol/virt_text_hide. virt_text={} clears virtual text.
+
+Virtual text defaults to end-of-line; virt_text_pos="inline" marks empty fields
+at their actual position. Signs require a visible signcolumn. Root $0 uses the
+insert style until exit. All decorations disappear with their node/session.
+Without ext_opts only the default highlights are used. Priorities default to
+130 (active) and 120 (passive). Range/gravity options cannot be overridden.
+LuaSnip numeric node types, per-node overrides and visited states are unsupported.
+
 INTEGRATION                                           *snippet-tools-completion*
 
 require('snippet_tools.integrations.completion_tools').options() returns
