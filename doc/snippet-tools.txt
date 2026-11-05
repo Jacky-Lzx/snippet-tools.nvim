@@ -106,6 +106,8 @@ at their actual position. Signs require a visible signcolumn. Root $0 uses the
 insert style until exit. All decorations disappear with their node/session.
 Without ext_opts only the default highlights are used. Priorities default to
 130 (active) and 120 (passive). Range/gravity options cannot be overridden.
+EOL virtual text uses separate marks at priority 120 to preserve field order;
+range highlights and signs retain their configured priorities.
 LuaSnip numeric node types, per-node overrides and visited states are unsupported.
 
 INTEGRATION                                           *snippet-tools-completion*

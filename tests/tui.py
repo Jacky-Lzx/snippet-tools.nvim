@@ -123,6 +123,24 @@ with tempfile.TemporaryDirectory(prefix="snippet-tools-tui-") as temporary:
         wait(lambda s: s["lines"] == ["X", "blue", "Body"] and not s["session"]["active"]
              and "I" not in s["display_rows"][0] and "C" not in s["display_rows"][1]
              and "i" not in "".join(s["display_rows"]), "all field markers removed on finish")
+        reset("display_eol")
+        send(b"i" + f5)
+        shown = wait(lambda s: s["session"]["active"] and s["mode"] == "i" and s["lines"] == ["[]-[]-"],
+                     "same-line markers ready")
+        assert shown["screen"].split("[]-[]-", 1)[1].replace(" ", "") == "Iii", shown
+        send(b"\t")
+        shown = wait(lambda s: s["session"].get("current") == "root/2" and s["mode"] == "i", "second same-line field")
+        assert shown["screen"].split("[]-[]-", 1)[1].replace(" ", "") == "iIi", shown
+        send(b"X\x1b[Z")
+        shown = wait(lambda s: s["session"].get("current") == "root/1" and s["mode"] == "i"
+                     and s["lines"] == ["[]-[X]-"], "previous field retains first marker position")
+        assert shown["screen"].split("[]-[X]-", 1)[1].replace(" ", "") == "Iii", shown
+        send(b"A\t")
+        shown = wait(lambda s: s["session"].get("current") == "root/2" and s["mode"] == "s", "next field retains second marker position")
+        assert shown["screen"].split("[A]-[X]-", 1)[1].replace(" ", "") == "iIi", shown
+        send(b"\t!")
+        wait(lambda s: s["lines"] == ["[A]-[X]-!"] and not s["session"]["active"]
+             and "I" not in s["screen"] and "i" not in s["screen"], "same-line markers cleared on exit")
         if env.get("SNIPPET_TUI_TRACE"):
             Path(env["SNIPPET_TUI_TRACE"]).write_text(json.dumps(frames, ensure_ascii=False, indent=2))
         print(f"PTY: {len(frames)} intermediate states passed")

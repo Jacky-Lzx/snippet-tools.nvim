@@ -1,6 +1,7 @@
 local api = vim.api
 local M = {}
 local ns = api.nvim_create_namespace("snippet-tools")
+local eol_ns = api.nvim_create_namespace("snippet-tools.eol")
 local display = require("snippet_tools.display")
 local stacks, attached, tickets, marks = {}, {}, {}, {}
 local serial, mutating = 0, false
@@ -99,12 +100,34 @@ end
 local function setmark(session, record, a, b, left, right)
   record.left_gravity, record.right_gravity = left, right
   record.highlight_active = session == top(session.buf) and record == session.current
+  local opts = vim.tbl_extend("force", {}, display.options(record.kind, record.highlight_active))
+  local eol
+  if
+    opts.virt_text
+    and #opts.virt_text > 0
+    and (not opts.virt_text_pos or opts.virt_text_pos == "eol")
+    and not opts.virt_text_win_col
+  then
+    -- EOL text is sorted by priority before position. Keep markers at a common
+    -- priority so active styling cannot move them past later fields; range
+    -- highlights and signs retain their own priorities on the tracking mark.
+    eol = {
+      virt_text = opts.virt_text,
+      virt_text_pos = "eol",
+      virt_text_hide = opts.virt_text_hide,
+      hl_mode = opts.hl_mode,
+      priority = 120,
+      right_gravity = left,
+      undo_restore = false,
+    }
+    opts.virt_text = nil
+  end
   record.mark = api.nvim_buf_set_extmark(
     session.buf,
     ns,
     a[1],
     a[2],
-    vim.tbl_extend("force", {}, display.options(record.kind, record.highlight_active), {
+    vim.tbl_extend("force", opts, {
       id = record.mark,
       end_row = b[1],
       end_col = b[2],
@@ -113,10 +136,21 @@ local function setmark(session, record, a, b, left, right)
       undo_restore = false,
     })
   )
+  if eol then
+    eol.id = record.mark
+    record.eol_mark = api.nvim_buf_set_extmark(session.buf, eol_ns, a[1], a[2], eol)
+  elseif record.eol_mark then
+    api.nvim_buf_del_extmark(session.buf, eol_ns, record.eol_mark)
+    record.eol_mark = nil
+  end
   marks[session.buf] = marks[session.buf] or {}
   marks[session.buf][record.mark], record.owner = record, session
 end
 local function delmark(session, record)
+  if record.eol_mark then
+    api.nvim_buf_del_extmark(session.buf, eol_ns, record.eol_mark)
+    record.eol_mark = nil
+  end
   if record.mark then
     api.nvim_buf_del_extmark(session.buf, ns, record.mark)
     if marks[session.buf] then

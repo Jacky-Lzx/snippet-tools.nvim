@@ -588,10 +588,13 @@ local ok, err = xpcall(function()
       function decorations()
         local result={}
         local ns=vim.api.nvim_get_namespaces()['snippet-tools']
+        local eol_ns=vim.api.nvim_get_namespaces()['snippet-tools.eol']
         for _,mark in ipairs(vim.api.nvim_buf_get_extmarks(0,ns,0,-1,{details=true})) do
           local d=mark[4]
-          if d.virt_text then
-            result[#result+1]={mark[2],mark[3],d.virt_text[1][1],d.sign_text:match('%S+'),d.priority,d.hl_group}
+          local eol=vim.api.nvim_buf_get_extmark_by_id(0,eol_ns,mark[1],{details=true})
+          local text=d.virt_text or (#eol>0 and eol[3].virt_text)
+          if text then
+            result[#result+1]={mark[2],mark[3],text[1][1],d.sign_text:match('%S+'),d.priority,d.hl_group}
           end
         end
         return result
@@ -618,6 +621,12 @@ local ok, err = xpcall(function()
     input("<Tab>body")
     wait("return vim.api.nvim_get_current_line()=='body' and not require('snippet_tools').active()")
     eq({}, lua("return decorations()"))
+    eq(
+      {},
+      lua(
+        "return vim.api.nvim_buf_get_extmarks(0,vim.api.nvim_get_namespaces()['snippet-tools.eol'],0,-1,{})"
+      )
+    )
   end)
   test("nested sessions suspend and restore their parent decorations", function()
     configure_display()
@@ -651,13 +660,16 @@ local ok, err = xpcall(function()
     lua([[
       local s=require('snippet_tools')
       local ns=vim.api.nvim_get_namespaces()['snippet-tools']
+      local eol_ns=vim.api.nvim_get_namespaces()['snippet-tools.eol']
       local plain, passive = 0
       for _,mark in ipairs(vim.api.nvim_buf_get_extmarks(0,ns,0,-1,{details=true})) do
         local d=mark[4]
         if mark[3]==0 and d.end_col==5 then
           assert(not d.hl_group and not d.sign_text and #(d.virt_text or {})==0, vim.inspect(d))
           plain=plain+1
-        elseif d.sign_text then passive=d end
+        elseif d.sign_text then
+          passive=vim.api.nvim_buf_get_extmark_by_id(0,eol_ns,mark[1],{details=true})[3]
+        end
       end
       assert(plain==2 and passive and passive.virt_text[1][1]=='passive')
       for _,opts in ipairs({

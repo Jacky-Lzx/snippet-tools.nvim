@@ -51,11 +51,15 @@ function _G.snippet_tui_reset(kind)
     fixture = "[${1:outer}]=${1}:${2:next}$0"
   elseif kind == "auto" then
     s.add("lua", { { trigger = "mk", body = "[$1]$0", auto = true } })
-  elseif kind == "display" then
+  elseif kind == "display" or kind == "display_eol" then
     vim.wo.signcolumn = "yes:1"
     setup({
       insert = {
-        passive = { virt_text = { { "i", "Comment" } }, virt_text_pos = "inline", sign_text = "i" },
+        passive = {
+          virt_text = { { "i", "Comment" } },
+          virt_text_pos = kind == "display" and "inline" or "eol",
+          sign_text = "i",
+        },
         active = { virt_text = { { "I", "Identifier" } }, sign_text = "I" },
       },
       choice = {
@@ -63,7 +67,7 @@ function _G.snippet_tui_reset(kind)
         active = { virt_text = { { "C", "Type" } }, sign_text = "C" },
       },
     })
-    fixture = "$1\n${2|red,blue|}\n$0"
+    fixture = kind == "display" and "$1\n${2|red,blue|}\n$0" or "[$1]-[$2]-$0"
   elseif kind == "completion" then
     vim.opt.runtimepath:append(vim.env.COMPLETION_TOOLS_PATH)
     s.setup({ keymap = false })
