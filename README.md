@@ -278,9 +278,14 @@ Expansion options include `range = { {start_row, start_col}, {end_row, end_col} 
 an enclosing edit transaction. `body` is a raw snippet; custom Lua strings are
 literal text when supplied through `s.t()` or returned by a dynamic node.
 
-Moving outside the snippet or leaving the buffer ends the session. Reaching root
-`$0` ends that session and resumes its parent. Undo ends a session when it moves
-behind its tracked undo sequence; redo restores text without recreating sessions.
+Moving outside the snippet or leaving the buffer ends the session.
+The range check includes columns on the same line and unwinds every nested
+session the cursor has left. In Insert mode the end boundary remains available
+for typing; in Normal mode the first character after the snippet is outside it.
+Navigation also checks the cursor before acting, even before cursor events run.
+Reaching root `$0` ends that session and resumes its parent. Undo ends a session
+when it moves behind its tracked undo sequence; redo restores text without
+recreating sessions.
 Replacing a whole parent field discards its old nested fields. Finished snippets
 are not retained in a history jump list. `stop()` preserves buffer text.
 While a field is selected, window folding is temporarily suspended so an

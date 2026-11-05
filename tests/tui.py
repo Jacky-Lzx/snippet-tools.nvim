@@ -53,7 +53,8 @@ with tempfile.TemporaryDirectory(prefix="snippet-tools-tui-") as temporary:
         send(b"\x1b\x1b")
         wait(lambda s: s["mode"] == "n", "normal")
         send(f":lua snippet_tui_reset('{kind}')\r".encode())
-        wait(lambda s: s["lines"] == [""] and s["mode"] == "n", "reset " + kind)
+        expected = ["pre  tail"] if kind == "region" else [""]
+        wait(lambda s: s["lines"] == expected and s["mode"] == "n", "reset " + kind)
 
     f5, f6, f7, f8 = b"\x1b[15~", b"\x1b[17~", b"\x1b[18~", b"\x1b[19~"
     try:
@@ -66,6 +67,22 @@ with tempfile.TemporaryDirectory(prefix="snippet-tools-tui-") as temporary:
         wait(lambda s: s["lines"] == ["hello 中文 / 中文!"] and s["mode"] == "i", "live mirror")
         send(b"\t!")
         wait(lambda s: s["lines"] == ["hello 中文 / 中文!!"] and not s["session"]["active"], "final stop")
+
+        reset("region")
+        send(b"i" + f5)
+        wait(lambda s: s["mode"] == "s" and s["session"]["range"] == [[0, 4], [0, 11]]
+             and "pre [field] tail" in s["screen"], "same-line snippet with prefix and suffix")
+        send(b"\x1b6l")
+        wait(lambda s: s["mode"] == "n" and s["cursor"] == [1, 11] and not s["session"]["active"],
+             "first suffix character ends the session")
+
+        reset("region")
+        send(b"i" + f5 + b"X")
+        wait(lambda s: s["mode"] == "i" and s["lines"] == ["pre [X] tail"] and s["session"]["active"],
+             "same-line field replacement stays active")
+        send(b"\x1b[F\t!")
+        wait(lambda s: s["mode"] == "i" and s["lines"] == ["pre [X] tail    !"]
+             and not s["session"]["active"], "moving past suffix then Tab does not jump back")
 
         reset("choice")
         send(b"i" + f5 + b"green" + f6)

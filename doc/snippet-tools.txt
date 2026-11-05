@@ -108,6 +108,11 @@ a parent field discards its children. Undo behind the tracked sequence ends the
 session; redo restores text without recreating sessions. One undo of a manual
 or automatic expansion restores its trigger. Pasted text does not auto-expand.
 
+Region checks include columns on the same line and remove every nested session
+the cursor has left. Insert mode allows typing at the end boundary; in Normal
+mode the first suffix character is outside the snippet. active() and jump()
+also check the cursor directly, before deferred cursor events run.
+
 COMMANDS                                              *snippet-tools-commands*
 
 :SnippetToolsInspect   Show the current session's state and live node counts.

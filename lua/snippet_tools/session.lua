@@ -853,6 +853,7 @@ function M.expand(body, opts)
 end
 
 function M.active(direction)
+  M.check_cursor()
   local session = top()
   if not session or session.finishing then
     return false
@@ -871,6 +872,7 @@ end
 
 function M.jump(direction)
   assert(direction == 1 or direction == -1, "snippet-tools: direction must be 1 or -1")
+  M.check_cursor()
   M.update()
   local session = top()
   if not session or session.finishing then
@@ -1005,29 +1007,30 @@ function M.check_cursor()
     return
   end
   local mode = api.nvim_get_mode().mode
-  if
-    not session.pending
-    and mode ~= "s"
-    and mode ~= "S"
-    and mode ~= "\19"
-    and mode ~= "v"
-    and mode ~= "V"
-    and mode ~= "\22"
-  then
-    release_selection(session)
-  end
-  if session.finishing and not session.pending then
-    M.stop(session.buf)
-    M.update()
-    return
-  end
-  if session.pending then
-    return
-  end
-  local a, b = range(session, session.root)
   local pos = cursor()
-  if not a or not le(a, pos) or not le(pos, b) then
-    M.stop(session.buf)
+  while session do
+    if session.pending then
+      return
+    end
+    if mode ~= "s" and mode ~= "S" and mode ~= "\19" and mode ~= "v" and mode ~= "V" and mode ~= "\22" then
+      release_selection(session)
+    end
+    if session.finishing then
+      M.stop(session.buf)
+      M.update()
+    else
+      local a, b = range(session, session.root)
+      -- Insert/Select mode can sit at the end-exclusive insertion boundary.
+      -- In Normal mode that position is already the first suffix character.
+      local at_suffix = a and mode:sub(1, 1) == "n" and not equal(a, b) and equal(pos, b)
+      if a and le(a, pos) and le(pos, b) and not at_suffix then
+        return
+      end
+      M.stop(session.buf)
+    end
+    -- A single move can leave several nested snippets; only retain an ancestor
+    -- whose own range still contains the cursor.
+    session = top()
   end
 end
 

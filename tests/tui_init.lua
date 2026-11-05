@@ -36,6 +36,10 @@ function _G.snippet_tui_reset(kind)
   setup()
   if kind == "mirror" then
     fixture = "hello ${1:world} / $1!$0"
+  elseif kind == "region" then
+    fixture = "[${1:field}]$0"
+    vim.api.nvim_buf_set_lines(0, 0, -1, false, { "pre  tail" })
+    vim.api.nvim_win_set_cursor(0, { 1, 4 })
   elseif kind == "choice" then
     fixture = "${1|red,blue|}=$1$0"
   elseif kind == "dynamic" then
