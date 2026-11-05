@@ -394,3 +394,12 @@ regeneration and optional integration with the actual sibling completion checkou
 comparison, see [bench/README.md](bench/README.md): fresh module loads, collection
 scaling, real PTY input in isolation and in the user configuration, and lifecycle
 memory checkpoints. Raw samples and correctness failures are recorded.
+
+### Plugin-owned first-input initialization
+
+Call `require("snippet_tools.bootstrap").setup(opts)` to register first-input
+initialization without loading the snippet engine. The plugin handles InsertEnter
+and its own SnippetTools commands. `bootstrap.ensure()` explicitly initializes
+once and returns the engine; the `User SnippetToolsReady` event lets completion
+integrations refresh their keymaps. Optional `extends` maps filetypes to parent
+filetypes before setup. Direct `snippet_tools.setup(opts)` remains eager.
