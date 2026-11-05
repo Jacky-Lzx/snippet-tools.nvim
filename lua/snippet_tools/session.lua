@@ -108,9 +108,8 @@ local function setmark(session, record, a, b, left, right)
     and (not opts.virt_text_pos or opts.virt_text_pos == "eol")
     and not opts.virt_text_win_col
   then
-    -- EOL text is sorted by priority before position. Keep markers at a common
-    -- priority so active styling cannot move them past later fields; range
-    -- highlights and signs retain their own priorities on the tracking mark.
+    -- EOL text is sorted by priority before position. refresh_eol assigns stable
+    -- priorities by field order; range highlights and signs remain independent.
     eol = {
       virt_text = opts.virt_text,
       virt_text_pos = "eol",
@@ -136,10 +135,9 @@ local function setmark(session, record, a, b, left, right)
       undo_restore = false,
     })
   )
-  if eol then
-    eol.id = record.mark
-    record.eol_mark = api.nvim_buf_set_extmark(session.buf, eol_ns, a[1], a[2], eol)
-  elseif record.eol_mark then
+  record.eol_opts = eol
+  session.has_eol = session.has_eol or eol ~= nil
+  if not eol and record.eol_mark then
     api.nvim_buf_del_extmark(session.buf, eol_ns, record.eol_mark)
     record.eol_mark = nil
   end
@@ -164,6 +162,77 @@ local function each_record(buf, fn)
     for _, record in ipairs(session.records) do
       if not record.dead then
         fn(session, record)
+      end
+    end
+  end
+end
+local function refresh_eol(buf)
+  local needed, prefixes, prefix = false, {}, {}
+  for _, session in ipairs(stacks[buf] or {}) do
+    needed = needed or session.has_eol
+    prefixes[session] = prefix
+    prefix = vim.list_extend(vim.list_extend({}, prefix), session.current and session.current.path or {})
+  end
+  if not needed then
+    return
+  end
+  local rows, index = {}, marks[buf] or {}
+  for _, mark in ipairs(api.nvim_buf_get_extmarks(buf, ns, 0, -1, {})) do
+    local record = index[mark[1]]
+    if record and not record.dead and record.eol_opts then
+      rows[mark[2]] = rows[mark[2]] or {}
+      rows[mark[2]][#rows[mark[2]] + 1] = {
+        record = record,
+        col = mark[3],
+        order = vim.list_extend(vim.list_extend({}, prefixes[record.owner]), record.path),
+      }
+    end
+  end
+  for row, entries in pairs(rows) do
+    table.sort(entries, function(a, b)
+      if a.col ~= b.col then
+        return a.col < b.col
+      end
+      for i = 1, math.max(#a.order, #b.order) do
+        if a.order[i] ~= b.order[i] then
+          if a.order[i] == nil then
+            return true
+          elseif b.order[i] == nil then
+            return false
+          end
+          return a.order[i] < b.order[i]
+        end
+      end
+      return a.record.mark < b.record.mark
+    end)
+    local overflow = entries[6] and entries[6].record
+    local style = overflow and overflow.eol_opts
+    for i = 6, #entries do
+      if entries[i].record.highlight_active then
+        style = entries[i].record.eol_opts
+        break
+      end
+    end
+    for i, entry in ipairs(entries) do
+      local record, opts = entry.record
+      if i <= 5 then
+        opts = record.eol_opts
+      elseif i == 6 then
+        opts = vim.tbl_extend("force", {}, record.eol_opts, {
+          virt_text = { { "...", style.virt_text[1][2] } },
+        })
+      end
+      if opts then
+        record.eol_mark = api.nvim_buf_set_extmark(
+          buf,
+          eol_ns,
+          row,
+          entry.col,
+          vim.tbl_extend("force", {}, opts, { id = record.mark, priority = 119 + i })
+        )
+      elseif record.eol_mark then
+        api.nvim_buf_del_extmark(buf, eol_ns, record.eol_mark)
+        record.eol_mark = nil
       end
     end
   end
@@ -224,6 +293,9 @@ local function gravity(session, target, start, finish, edit)
         assign_gravity(session, target, start, finish, owner, record, a, b)
       end
     end)
+  end
+  if not edit then
+    refresh_eol(session.buf)
   end
 end
 

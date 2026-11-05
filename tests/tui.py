@@ -141,6 +141,34 @@ with tempfile.TemporaryDirectory(prefix="snippet-tools-tui-") as temporary:
         send(b"\t!")
         wait(lambda s: s["lines"] == ["[A]-[X]-!"] and not s["session"]["active"]
              and "I" not in s["screen"] and "i" not in s["screen"], "same-line markers cleared on exit")
+        reset("display_overflow")
+        send(b"i" + f5)
+        source = "[]-" * 7
+        shown = wait(lambda s: s["session"].get("current") == "root/1" and s["mode"] == "i",
+                     "overflow markers ready")
+        start = shown["screen"].index(source) + len(source)
+        assert shown["screen"][start:].replace(" ", "") == "Iiiii...", shown
+        active_attr = shown["display_attrs"][0][shown["screen"].index("I", start)]
+        passive_attr = shown["display_attrs"][0][shown["screen"].index("...", start)]
+        assert active_attr != passive_attr, shown
+        for target in range(2, 8):
+            send(b"\t")
+            shown = wait(lambda s: s["session"].get("current") == f"root/{target}" and s["mode"] == "i",
+                         f"overflow field {target}")
+            markers = "i" * (target - 1) + "I" + "i" * (5 - target) if target <= 5 else "iiiii"
+            assert shown["screen"][start:].replace(" ", "") == markers + "...", shown
+            dot = shown["screen"].index("...", start)
+            expected = active_attr if target > 5 else passive_attr
+            assert shown["display_attrs"][0][dot:dot+3] == [expected] * 3, shown
+        send(b"\x1b[Z" * 3)
+        shown = wait(lambda s: s["session"].get("current") == "root/4" and s["mode"] == "i",
+                     "return from hidden to visible field")
+        assert shown["screen"][start:].replace(" ", "") == "iiiIi...", shown
+        dot = shown["screen"].index("...", start)
+        assert shown["display_attrs"][0][dot:dot+3] == [passive_attr] * 3, shown
+        send(b"\t" * 4)
+        wait(lambda s: not s["session"]["active"] and s["lines"] == [source]
+             and not s["screen"][start:].strip(), "overflow marker clears on exit")
         if env.get("SNIPPET_TUI_TRACE"):
             Path(env["SNIPPET_TUI_TRACE"]).write_text(json.dumps(frames, ensure_ascii=False, indent=2))
         print(f"PTY: {len(frames)} intermediate states passed")

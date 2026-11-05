@@ -599,6 +599,19 @@ local ok, err = xpcall(function()
         end
         return result
       end
+      function eol_summary(row)
+        local ns=vim.api.nvim_get_namespaces()['snippet-tools.eol']
+        local entries={}
+        for _,mark in ipairs(vim.api.nvim_buf_get_extmarks(0,ns,0,-1,{details=true})) do
+          if mark[2]==row then entries[#entries+1]=mark[4] end
+        end
+        table.sort(entries,function(a,b)return a.priority<b.priority end)
+        local text,last={}
+        for _,entry in ipairs(entries)do
+          last=entry.virt_text[1];text[#text+1]=last[1]
+        end
+        return {table.concat(text),last and last[2],#entries}
+      end
     ]])
   end
   test("node decorations follow field and choice transitions and clear on exit", function()
@@ -645,6 +658,56 @@ local ok, err = xpcall(function()
     eq({ "I", "i" }, lua([[local out={};for _,d in ipairs(decorations())do out[#out+1]=d[3] end;return out]]))
     lua([[require('snippet_tools').stop()]])
     eq({}, lua("return decorations()"))
+  end)
+  test("EOL overflow is per line and follows hidden activity and line splits", function()
+    configure_display()
+    lua([[fixture='$1|$2|$3|$4|$5\n$6|$7|$8|$9|$10|$11|$12$0']])
+    input("i<F5>")
+    wait("return vim.api.nvim_get_mode().mode=='i' and require('snippet_tools').active()")
+    eq({ "Iiiii", "Comment", 5 }, lua("return eol_summary(0)"))
+    eq({ "iiiii...", "Comment", 6 }, lua("return eol_summary(1)"))
+    input(string.rep("<Tab>", 9))
+    wait("return require('snippet_tools').inspect().current=='root/10'")
+    eq({ "iiiiI...", "Comment", 6 }, lua("return eol_summary(1)"))
+    input("<Tab>")
+    wait("return require('snippet_tools').inspect().current=='root/11'")
+    eq({ "iiiii...", "Identifier", 6 }, lua("return eol_summary(1)"))
+    input("<Tab>")
+    wait("return require('snippet_tools').inspect().current=='root/12'")
+    eq({ "iiiii...", "Identifier", 6 }, lua("return eol_summary(1)"))
+    input("<S-Tab><S-Tab>")
+    wait("return require('snippet_tools').inspect().current=='root/10'")
+    eq({ "iiiiI...", "Comment", 6 }, lua("return eol_summary(1)"))
+    input("<CR>")
+    wait("return vim.api.nvim_buf_line_count(0)==3")
+    eq({ "iiiiI", "Identifier", 5 }, lua("return eol_summary(1)"))
+    eq({ "iii", "Comment", 3 }, lua("return eol_summary(2)"))
+    lua([[require('snippet_tools').stop()]])
+    eq(
+      {},
+      lua(
+        "return vim.api.nvim_buf_get_extmarks(0,vim.api.nvim_get_namespaces()['snippet-tools.eol'],0,-1,{})"
+      )
+    )
+  end)
+  test("rebuilding a choice restores markers previously hidden by overflow", function()
+    configure_display()
+    lua([[
+      local s=require('snippet_tools')
+      fixture={s.c(1,{
+        {s.i(1),s.t('|'),s.i(2),s.t('|'),s.i(3),s.t('|'),s.i(4),s.t('|'),s.i(5),s.t('|'),s.i(6)},
+        {s.i(1),s.t('|'),s.i(2)},
+      }),s.i(0)}
+    ]])
+    input("i<F5>")
+    wait("return require('snippet_tools').active() and vim.api.nvim_get_mode().mode=='s'")
+    eq({ "Ciiii...", "Comment", 6 }, lua("return eol_summary(0)"))
+    input("<F6>")
+    wait("return vim.api.nvim_get_current_line()=='|' and vim.api.nvim_get_mode().mode=='s'")
+    eq({ "Ciii", "Comment", 4 }, lua("return eol_summary(0)"))
+    input("<F6>")
+    wait("return vim.api.nvim_get_current_line()=='|||||' and vim.api.nvim_get_mode().mode=='s'")
+    eq({ "Ciiii...", "Comment", 6 }, lua("return eol_summary(0)"))
   end)
   test("display options inherit, clear and reject edits to tracking options", function()
     lua([[

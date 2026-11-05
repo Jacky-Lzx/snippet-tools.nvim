@@ -51,7 +51,7 @@ function _G.snippet_tui_reset(kind)
     fixture = "[${1:outer}]=${1}:${2:next}$0"
   elseif kind == "auto" then
     s.add("lua", { { trigger = "mk", body = "[$1]$0", auto = true } })
-  elseif kind == "display" or kind == "display_eol" then
+  elseif kind == "display" or kind == "display_eol" or kind == "display_overflow" then
     vim.wo.signcolumn = "yes:1"
     setup({
       insert = {
@@ -67,7 +67,9 @@ function _G.snippet_tui_reset(kind)
         active = { virt_text = { { "C", "Type" } }, sign_text = "C" },
       },
     })
-    fixture = kind == "display" and "$1\n${2|red,blue|}\n$0" or "[$1]-[$2]-$0"
+    fixture = kind == "display" and "$1\n${2|red,blue|}\n$0"
+      or kind == "display_overflow" and "[$1]-[$2]-[$3]-[$4]-[$5]-[$6]-[$7]-$0"
+      or "[$1]-[$2]-$0"
   elseif kind == "completion" then
     vim.opt.runtimepath:append(vim.env.COMPLETION_TOOLS_PATH)
     s.setup({ keymap = false })
@@ -102,16 +104,19 @@ timer:start(
       session = s.inspect(),
       screen = table.concat(cells),
       display_rows = {},
+      display_attrs = {},
       errors = notifications,
       menu = package.loaded.completion_tools and require("completion_tools").is_menu_visible() or false,
     }
     for row = 1, math.min(3, vim.api.nvim_buf_line_count(0)) do
       local pos = vim.fn.screenpos(vim.api.nvim_get_current_win(), row, 1)
-      local text = {}
+      local text, attrs = {}, {}
       for col = 1, math.min(vim.o.columns, 100) do
         text[#text + 1] = vim.fn.screenstring(pos.row, col)
+        attrs[#attrs + 1] = vim.fn.screenattr(pos.row, col)
       end
       state.display_rows[#state.display_rows + 1] = table.concat(text)
+      state.display_attrs[#state.display_attrs + 1] = attrs
     end
     vim.fn.writefile({ vim.json.encode(state) }, vim.env.SNIPPET_TUI_STATE)
   end)

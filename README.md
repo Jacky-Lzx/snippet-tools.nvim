@@ -283,9 +283,13 @@ node or session is removed. Root `$0` uses the insert style until the session en
 
 Without `ext_opts`, existing highlights remain unchanged and no icons or signs
 are added. Default priorities are 130 for active nodes and 120 for passive nodes.
-End-of-line virtual text uses separate marks at a shared priority of 120 so its
-order follows the fields' buffer positions when the active node changes; range
+End-of-line virtual text uses separate marks with stable priorities of 120–125
+so its order follows the fields' buffer positions when the active node changes; range
 highlights and signs keep their configured priorities.
+Each buffer line shows at most five end-of-line node markers. Additional nodes
+are represented by `...`, which uses the active hidden node's marker color when
+one of those nodes is current; otherwise it uses the first hidden marker's color.
+Exactly five markers need no ellipsis. Inline markers and signs are not truncated.
 Range/gravity/lifecycle options remain owned by the engine and cannot be set
 through `ext_opts`. This API uses string node types and two states; it does not
 accept LuaSnip's numeric types, per-node overrides or visited/history states.
