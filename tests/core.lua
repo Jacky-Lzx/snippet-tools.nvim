@@ -49,4 +49,15 @@ eq(
     return n.insert(1, "child")
   end) }).text
 )
+-- Direct/LSP expansion must work on an empty line, before typing a trigger.
+local variables = require("snippet_tools.variables")
+eq("", variables.snapshot().TM_CURRENT_WORD)
+local engine = require("snippet_tools")
+engine.setup({ keymap = false })
+eq(true, engine.expand("${TM_CURRENT_WORD:fallback}"))
+eq("fallback", vim.api.nvim_get_current_line())
+engine.stop()
+vim.api.nvim_win_set_cursor(0, { 1, 0 })
+eq("fallback", variables.snapshot().TM_CURRENT_WORD)
+eq("override", variables.snapshot({ variables = { TM_CURRENT_WORD = "override" } }).TM_CURRENT_WORD)
 print("core: " .. count .. " assertions passed")
