@@ -113,6 +113,7 @@ with tempfile.TemporaryDirectory(prefix="snippet-tools-tui-") as temporary:
                      and "I" in s["display_rows"][0] and "cred" in s["display_rows"][1],
                      "empty field and passive choice markers rendered")
         assert shown["display_rows"][0].count("I") == 2, shown  # Sign and inline marker.
+        assert shown["display_rows"][2].strip() == "e e", shown  # Distinct final-stop sign and marker.
         send(b"X\t")
         shown = wait(lambda s: s["mode"] == "s" and "Cred" in s["display_rows"][1]
                      and "iX" in s["display_rows"][0], "active choice marker and passive insert rendered")
@@ -127,17 +128,17 @@ with tempfile.TemporaryDirectory(prefix="snippet-tools-tui-") as temporary:
         send(b"i" + f5)
         shown = wait(lambda s: s["session"]["active"] and s["mode"] == "i" and s["lines"] == ["[]-[]-"],
                      "same-line markers ready")
-        assert shown["screen"].split("[]-[]-", 1)[1].replace(" ", "") == "Iii", shown
+        assert shown["screen"].split("[]-[]-", 1)[1].replace(" ", "") == "Iie", shown
         send(b"\t")
         shown = wait(lambda s: s["session"].get("current") == "root/2" and s["mode"] == "i", "second same-line field")
-        assert shown["screen"].split("[]-[]-", 1)[1].replace(" ", "") == "iIi", shown
+        assert shown["screen"].split("[]-[]-", 1)[1].replace(" ", "") == "iIe", shown
         send(b"X\x1b[Z")
         shown = wait(lambda s: s["session"].get("current") == "root/1" and s["mode"] == "i"
                      and s["lines"] == ["[]-[X]-"], "previous field retains first marker position")
-        assert shown["screen"].split("[]-[X]-", 1)[1].replace(" ", "") == "Iii", shown
+        assert shown["screen"].split("[]-[X]-", 1)[1].replace(" ", "") == "Iie", shown
         send(b"A\t")
         shown = wait(lambda s: s["session"].get("current") == "root/2" and s["mode"] == "s", "next field retains second marker position")
-        assert shown["screen"].split("[A]-[X]-", 1)[1].replace(" ", "") == "iIi", shown
+        assert shown["screen"].split("[A]-[X]-", 1)[1].replace(" ", "") == "iIe", shown
         send(b"\t!")
         wait(lambda s: s["lines"] == ["[A]-[X]-!"] and not s["session"]["active"]
              and "I" not in s["screen"] and "i" not in s["screen"], "same-line markers cleared on exit")

@@ -100,7 +100,8 @@ end
 local function setmark(session, record, a, b, left, right)
   record.left_gravity, record.right_gravity = left, right
   record.highlight_active = session == top(session.buf) and record == session.current
-  local opts = vim.tbl_extend("force", {}, display.options(record.kind, record.highlight_active))
+  local kind = record.kind ~= "mirror" and record.node and record.node.index == 0 and "exit" or record.kind
+  local opts = vim.tbl_extend("force", {}, display.options(kind, record.highlight_active))
   local eol
   if
     opts.virt_text

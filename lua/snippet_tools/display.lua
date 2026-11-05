@@ -1,5 +1,6 @@
 local M = {}
-local kinds = { insert = true, choice = true, dynamic = true, mirror = true, ["function"] = true }
+local kinds =
+  { insert = true, exit = true, choice = true, dynamic = true, mirror = true, ["function"] = true }
 local fields = {
   hl_group = { string = true, number = true, table = true },
   hl_eol = { boolean = true },
@@ -25,6 +26,14 @@ local function merge(...)
     end
   end
   return result
+end
+
+local function node_style(passive, active, opts)
+  opts = opts or {}
+  return {
+    passive = merge(passive, opts.passive or {}),
+    active = merge(active, opts.passive or {}, opts.active or {}),
+  }
 end
 
 function M.configure(options)
@@ -60,20 +69,16 @@ function M.configure(options)
   end
   local next_styles = {}
   for kind in pairs(kinds) do
-    local editable = kind == "insert" or kind == "choice" or kind == "dynamic"
-    local opts = options[kind] or {}
-    next_styles[kind] = {
-      passive = merge(
+    if kind ~= "exit" then
+      local editable = kind == "insert" or kind == "choice" or kind == "dynamic"
+      next_styles[kind] = node_style(
         { priority = 120, hl_group = editable and "SnippetToolsPlaceholder" or nil },
-        opts.passive or {}
-      ),
-      active = merge(
         { priority = 130, hl_group = "SnippetToolsActive" },
-        opts.passive or {},
-        opts.active or {}
-      ),
-    }
+        options[kind]
+      )
+    end
   end
+  next_styles.exit = node_style(next_styles.insert.passive, next_styles.insert.active, options.exit)
   styles = next_styles
 end
 

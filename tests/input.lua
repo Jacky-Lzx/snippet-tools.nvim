@@ -579,6 +579,10 @@ local ok, err = xpcall(function()
             passive={virt_text={{'i','Comment'}},sign_text='i',sign_hl_group='Comment'},
             active={virt_text={{'I','Identifier'}},sign_text='I',sign_hl_group='Identifier'},
           },
+          exit={
+            passive={virt_text={{'e','Comment'}},sign_text='e'},
+            active={virt_text={{'E','Identifier'}},sign_text='E'},
+          },
           choice={
             passive={virt_text={{'c','Comment'}},sign_text='c',sign_hl_group='Comment'},
             active={virt_text={{'C','Type'}},sign_text='C',sign_hl_group='Type'},
@@ -622,14 +626,14 @@ local ok, err = xpcall(function()
     eq({
       { 0, 0, "I", "I", 130, "SnippetToolsActive" },
       { 1, 0, "c", "c", 120, "SnippetToolsPlaceholder" },
-      { 2, 0, "i", "i", 120, "SnippetToolsPlaceholder" },
+      { 2, 0, "e", "e", 120, "SnippetToolsPlaceholder" },
     }, lua("return decorations()"))
     input("X<Tab><F6>")
     wait("return vim.api.nvim_get_current_line()=='blue' and vim.api.nvim_get_mode().mode=='s'")
     eq({
       { 0, 0, "i", "i", 120, "SnippetToolsPlaceholder" },
       { 1, 0, "C", "C", 130, "SnippetToolsActive" },
-      { 2, 0, "i", "i", 120, "SnippetToolsPlaceholder" },
+      { 2, 0, "e", "e", 120, "SnippetToolsPlaceholder" },
     }, lua("return decorations()"))
     input("<Tab>body")
     wait("return vim.api.nvim_get_current_line()=='body' and not require('snippet_tools').active()")
@@ -650,13 +654,45 @@ local ok, err = xpcall(function()
     input("<F5>")
     wait("return vim.api.nvim_get_mode().mode=='s' and require('snippet_tools').inspect().depth==2")
     eq(
-      { "i", "I", "i", "i" },
+      { "i", "I", "e", "e" },
       lua([[local out={};for _,d in ipairs(decorations())do out[#out+1]=d[3] end;return out]])
     )
     input("X<Tab>")
     wait("return require('snippet_tools').inspect().depth==1 and vim.api.nvim_get_current_line()=='(X)-'")
-    eq({ "I", "i" }, lua([[local out={};for _,d in ipairs(decorations())do out[#out+1]=d[3] end;return out]]))
+    eq({ "I", "e" }, lua([[local out={};for _,d in ipairs(decorations())do out[#out+1]=d[3] end;return out]]))
     lua([[require('snippet_tools').stop()]])
+    eq({}, lua("return decorations()"))
+  end)
+  for _, suffix in ipairs({ "", "$0", "$0-$0" }) do
+    test("exit display distinguishes final stops with suffix " .. vim.inspect(suffix), function()
+      configure_display()
+      lua("fixture=...", "${1:field}" .. suffix)
+      input("i<F5>")
+      wait("return vim.api.nvim_get_mode().mode=='s'")
+      eq({ "Ie", "Comment", 2 }, lua("return eol_summary(0)"))
+      input("X<Tab>!")
+      wait("return not require('snippet_tools').active() and vim.api.nvim_get_mode().mode=='i'")
+      eq(suffix == "$0-$0" and "X!-" or "X!", lua("return vim.api.nvim_get_current_line()"))
+      eq({}, lua("return decorations()"))
+    end)
+  end
+  test("local zero fields use the active exit style without finishing the session", function()
+    configure_display()
+    lua([[
+      local s=require('snippet_tools')
+      fixture={s.c(1,{{s.i(1),s.t('|'),s.i(0)}}),s.t(':'),s.i(0)}
+    ]])
+    input("i<F5>")
+    wait("return vim.api.nvim_get_mode().mode=='s'")
+    eq({ "Ciee", "Comment", 4 }, lua("return eol_summary(0)"))
+    input("<Tab><Tab>")
+    wait(
+      "return require('snippet_tools').inspect().current=='root/1@1/0' and vim.api.nvim_get_mode().mode=='i'"
+    )
+    eq({ "ciEe", "Comment", 4 }, lua("return eol_summary(0)"))
+    eq("E", lua([[for _,d in ipairs(decorations())do if d[5]==130 then return d[4] end end]]))
+    input("<Tab>!")
+    wait("return vim.api.nvim_get_current_line()=='|:!' and not require('snippet_tools').active()")
     eq({}, lua("return decorations()"))
   end)
   test("EOL overflow is per line and follows hidden activity and line splits", function()
@@ -681,7 +717,7 @@ local ok, err = xpcall(function()
     input("<CR>")
     wait("return vim.api.nvim_buf_line_count(0)==3")
     eq({ "iiiiI", "Identifier", 5 }, lua("return eol_summary(1)"))
-    eq({ "iii", "Comment", 3 }, lua("return eol_summary(2)"))
+    eq({ "iie", "Comment", 3 }, lua("return eol_summary(2)"))
     lua([[require('snippet_tools').stop()]])
     eq(
       {},
@@ -704,7 +740,7 @@ local ok, err = xpcall(function()
     eq({ "Ciiii...", "Comment", 6 }, lua("return eol_summary(0)"))
     input("<F6>")
     wait("return vim.api.nvim_get_current_line()=='|' and vim.api.nvim_get_mode().mode=='s'")
-    eq({ "Ciii", "Comment", 4 }, lua("return eol_summary(0)"))
+    eq({ "Ciie", "Comment", 4 }, lua("return eol_summary(0)"))
     input("<F6>")
     wait("return vim.api.nvim_get_current_line()=='|||||' and vim.api.nvim_get_mode().mode=='s'")
     eq({ "Ciiii...", "Comment", 6 }, lua("return eol_summary(0)"))

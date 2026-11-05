@@ -62,6 +62,10 @@ function _G.snippet_tui_reset(kind)
         },
         active = { virt_text = { { "I", "Identifier" } }, sign_text = "I" },
       },
+      exit = {
+        passive = { virt_text = { { "e", "Comment" } }, sign_text = "e" },
+        active = { virt_text = { { "E", "Identifier" } }, sign_text = "E" },
+      },
       choice = {
         passive = { virt_text = { { "c", "Comment" } }, virt_text_pos = "inline", sign_text = "c" },
         active = { virt_text = { { "C", "Type" } }, sign_text = "C" },
