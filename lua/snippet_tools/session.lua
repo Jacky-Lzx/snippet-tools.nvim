@@ -134,11 +134,14 @@ local function assign_gravity(session, target, start, finish, owner, record, a, 
   local left, right = false, true
   if owner == session and descendant(target, record) then
     left, right = false, true
-  elseif le(b, start) and not (equal(b, start) and record.rank > target.rank) then
+  elseif equal(b, start) and record.rank <= target.rank then
     left, right = false, false
-  elseif le(finish, a) then
+  elseif equal(finish, a) then
     left, right = true, true
   end
+  -- Only shared boundaries need to exclude the active edit. Distant records
+  -- must retain both endpoints when another editor (e.g. LSP linked editing)
+  -- replaces their text before the scheduled dependency sync runs.
   if
     record.left_gravity ~= left
     or record.right_gravity ~= right

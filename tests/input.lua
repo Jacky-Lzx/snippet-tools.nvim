@@ -182,6 +182,57 @@ local ok, err = xpcall(function()
     input("<Tab>Z<Tab>!")
     wait("return vim.api.nvim_get_current_line()=='api/api/Z!'")
   end)
+  test("external linked edits preserve mirror ranges before snippet sync", function()
+    lua([[fixture='\\begin{${1:old}}\n  $0\n\\end{$1}']])
+    input("i<F5>")
+    wait("return vim.api.nvim_get_mode().mode=='s'")
+    lua([[
+      -- A linked-editing client can replace both names before the scheduled sync.
+      local previous = 'old'
+      for _, name in ipairs({'table', 'table*', 'tabular', '环境', 'table'}) do
+        vim.api.nvim_buf_set_text(0,0,7,0,7+#previous,{name})
+        vim.api.nvim_buf_set_text(0,2,5,2,5+#previous,{name})
+        require('snippet_tools').update()
+        assert(vim.deep_equal(vim.api.nvim_buf_get_lines(0,0,-1,false), {
+          '\\begin{'..name..'}', '  ', '\\end{'..name..'}',
+        }))
+        previous = name
+      end
+    ]])
+    eq({ "\\begin{table}", "  ", "\\end{table}" }, lua("return vim.api.nvim_buf_get_lines(0,0,-1,false)"))
+    input("<Esc>gg0f{lct}figure<Tab>body")
+    wait("return vim.api.nvim_get_current_line()=='  body'")
+    eq(
+      { "\\begin{figure}", "  body", "\\end{figure}" },
+      lua("return vim.api.nvim_buf_get_lines(0,0,-1,false)")
+    )
+  end)
+  test("external linked insertion fills an empty mirror exactly once", function()
+    lua([[fixture='\\begin{$1}\n  $0\n\\end{$1}']])
+    input("i<F5>")
+    wait("return vim.api.nvim_get_mode().mode=='i'")
+    lua([[
+      vim.api.nvim_buf_set_text(0,0,7,0,7,{'table'})
+      vim.api.nvim_buf_set_text(0,2,5,2,5,{'table'})
+      require('snippet_tools').update()
+    ]])
+    eq({ "\\begin{table}", "  ", "\\end{table}" }, lua("return vim.api.nvim_buf_get_lines(0,0,-1,false)"))
+    input("<Tab>body")
+    wait("return vim.api.nvim_get_current_line()=='  body' and not require('snippet_tools').active()")
+  end)
+  test("external replacements also preserve mirrors preceding their source", function()
+    lua([[fixture='$1 / ${1:old}:$0']])
+    input("i<F5>")
+    wait("return vim.api.nvim_get_mode().mode=='s'")
+    lua([[
+      vim.api.nvim_buf_set_text(0,0,6,0,9,{'table'})
+      vim.api.nvim_buf_set_text(0,0,0,0,3,{'table'})
+      require('snippet_tools').update()
+    ]])
+    eq("table / table:", lua("return vim.api.nvim_get_current_line()"))
+    input("<Tab>!")
+    wait("return vim.api.nvim_get_current_line()=='table / table:!'")
+  end)
   test("unchanged-text sync still rejects removed root marks", function()
     lua([[fixture='[${1:a}]$0']])
     input("i<F5>")
