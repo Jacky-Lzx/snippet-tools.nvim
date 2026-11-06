@@ -1,13 +1,22 @@
 local M = {}
 local stores, extensions, serial = {}, {}, 0
+local roots = {}
 
 local function before(a, b)
-  return a.priority == b.priority and a.id < b.id or a.priority > b.priority
+  if a.priority ~= b.priority then
+    return a.priority > b.priority
+  end
+  if a.root ~= b.root then
+    return #(a.root or "") > #(b.root or "")
+  end
+  return a.id < b.id
 end
 
 function M.add(filetype, definitions, options)
   options = options or {}
   assert(type(filetype) == "string" and filetype ~= "", "snippet-tools: invalid filetype")
+  assert(options.root == nil or type(options.root) == "string", "snippet-tools: root must be a path")
+  local root = options.root and require("snippet_tools.path").normalize(options.root)
   local entries = {}
   -- Validate the whole collection before replacing an existing namespace.
   for _, spec in ipairs(definitions) do
@@ -33,6 +42,8 @@ function M.add(filetype, definitions, options)
     serial = serial + 1
     entries[#entries + 1] = {
       id = serial,
+      root = root,
+      source = options.source,
       trigger = trigger,
       body = vim.deepcopy(body),
       description = spec.description,
@@ -52,7 +63,19 @@ function M.add(filetype, definitions, options)
     )
   end
   stores[filetype] = stores[filetype] or {}
-  stores[filetype][options.key or "default"] = entries
+  local key = options.key or "default"
+  for _, old in ipairs(stores[filetype][key] or {}) do
+    if old.root then
+      roots[old.root] = roots[old.root] - 1
+      if roots[old.root] == 0 then
+        roots[old.root] = nil
+      end
+    end
+  end
+  stores[filetype][key] = entries
+  if root and #entries > 0 then
+    roots[root] = (roots[root] or 0) + #entries
+  end
 end
 
 function M.extend(filetype, parents)
@@ -63,7 +86,7 @@ function M.extend(filetype, parents)
   extensions[filetype] = vim.deepcopy(parents)
 end
 
-local function entries(filetype)
+local function entries(filetype, scopes)
   local result, visited = {}, {}
   local function visit(ft)
     if visited[ft] then
@@ -71,7 +94,11 @@ local function entries(filetype)
     end
     visited[ft] = true
     for _, items in pairs(stores[ft] or {}) do
-      vim.list_extend(result, items)
+      for _, entry in ipairs(items) do
+        if not entry.root or scopes[entry.root] then
+          result[#result + 1] = entry
+        end
+      end
     end
     for _, parent in ipairs(extensions[ft] or {}) do
       visit(parent)
@@ -94,12 +121,34 @@ function M.extend(...)
   extend(...)
   indexed = {}
 end
-local function get_index(filetype)
-  if indexed[filetype] then
-    return indexed[filetype]
+function M.remove(filetype, key)
+  if stores[filetype] and stores[filetype][key] then
+    M.add(filetype, {}, { key = key })
+    stores[filetype][key] = nil
+  end
+end
+local function get_index(filetype, ctx)
+  local scopes, key = nil, ""
+  if next(roots) then
+    scopes = {}
+    local names = {}
+    local path = require("snippet_tools.path")
+    local filename = path.buffer(ctx and ctx.bufnr)
+    for root in pairs(roots) do
+      if path.contains(root, filename) then
+        scopes[root] = true
+        names[#names + 1] = root
+      end
+    end
+    table.sort(names)
+    key = table.concat(names, "\0")
+  end
+  indexed[filetype] = indexed[filetype] or {}
+  if indexed[filetype][key] then
+    return indexed[filetype][key]
   end
   local index = {
-    all = entries(filetype),
+    all = entries(filetype, scopes or {}),
     suffix = { [true] = {}, [false] = {} },
     patterns = { [true] = {}, [false] = {} },
     has_auto = false,
@@ -114,7 +163,7 @@ local function get_index(filetype)
     end
     index.has_auto = index.has_auto or entry.auto
   end
-  indexed[filetype] = index
+  indexed[filetype][key] = index
   return index
 end
 
@@ -143,7 +192,7 @@ function M.match(entry, ctx)
 end
 
 function M.find(ctx, auto)
-  local index = get_index(ctx.filetype)
+  local index = get_index(ctx.filetype, ctx)
   local literal, patterns = index.suffix[auto][ctx.before:sub(-1)] or {}, index.patterns[auto]
   local i, j = 1, 1
   while literal[i] or patterns[j] do
@@ -162,7 +211,7 @@ end
 
 function M.available(ctx)
   local result = {}
-  for _, entry in ipairs(get_index(ctx.filetype).all) do
+  for _, entry in ipairs(get_index(ctx.filetype, ctx).all) do
     if not entry.hidden and not entry.pattern and (not entry.show_condition or entry.show_condition(ctx)) then
       result[#result + 1] = entry
     end
@@ -170,8 +219,24 @@ function M.available(ctx)
   return result
 end
 
-function M.has_auto(filetype)
-  return get_index(filetype).has_auto
+function M.has_auto(filetype, ctx)
+  return get_index(filetype, ctx).has_auto
+end
+
+function M.explain(ctx)
+  local manual, automatic = M.find(ctx, false), M.find(ctx, true)
+  local result = {}
+  for _, entry in ipairs(get_index(ctx.filetype, ctx).all) do
+    result[#result + 1] = {
+      trigger = entry.trigger,
+      priority = entry.priority,
+      root = entry.root,
+      source = entry.source,
+      auto = entry.auto,
+      selected = entry == manual or entry == automatic,
+    }
+  end
+  return result
 end
 
 function M.filetypes(filetype)
@@ -192,7 +257,7 @@ function M.filetypes(filetype)
 end
 
 function M.clear()
-  stores, extensions, indexed = {}, {}, {}
+  stores, extensions, indexed, roots = {}, {}, {}, {}
 end
 
 return M

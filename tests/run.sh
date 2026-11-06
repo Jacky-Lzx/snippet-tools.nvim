@@ -11,5 +11,6 @@ ${NVIM:-nvim} --headless -u tests/minimal_init.lua -i NONE -n -l tests/bootstrap
 ${NVIM:-nvim} --headless -u tests/minimal_init.lua -i NONE -n -l tests/core.lua
 ${NVIM:-nvim} --headless -u tests/minimal_init.lua -i NONE -n -l tests/fmt.lua
 ${NVIM:-nvim} --headless -u tests/minimal_init.lua -i NONE -n -l tests/registry.lua
+${NVIM:-nvim} --headless -u tests/minimal_init.lua -i NONE -n -l tests/projects.lua
 ${NVIM:-nvim} --headless -u tests/minimal_init.lua -i NONE -n -l tests/input.lua
 python3 tests/tui.py

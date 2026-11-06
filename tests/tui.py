@@ -59,6 +59,19 @@ with tempfile.TemporaryDirectory(prefix="snippet-tools-tui-") as temporary:
     f5, f6, f7, f8 = b"\x1b[15~", b"\x1b[17~", b"\x1b[18~", b"\x1b[19~"
     try:
         wait(lambda s: s["mode"] == "n", "startup")
+        reset("project")
+        send(b"ipj\t")
+        wait(lambda s: s["mode"] == "s" and s["lines"] == ["[value]=value"], "project wins global trigger")
+        send(b"X" + f8 + b"Y")
+        wait(lambda s: s["mode"] == "i" and s["lines"] == ["[XY]=XY"] and s["session"]["active"],
+             "project reload retains the active field and mirror")
+        send(b"\t!\x1bggdGipj\t")
+        wait(lambda s: s["mode"] == "s" and s["lines"] == ["<new>"], "project replacement applies on next expansion")
+        send(b"Z\t!\x1b:lua snippet_tui_outside()\r")
+        wait(lambda s: s["mode"] == "n" and s["lines"] == [""], "outside buffer")
+        send(b"ipj\t")
+        wait(lambda s: s["mode"] == "s" and s["lines"] == ["global:outside"], "outside project uses global snippets")
+
         reset("mirror")
         send(b"i" + f5)
         selection = wait(lambda s: s["mode"] == "s" and "hello world / world!" in s["screen"], "rendered selection")

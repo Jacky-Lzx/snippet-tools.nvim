@@ -10,10 +10,11 @@ function M.new()
         return
       end
       ctx.cache = ctx.cache or {}
-      local items = {}
+      local items, seen = {}, {}
       for _, entry in ipairs(require("snippet_tools").available(ctx)) do
         local match = { trigger = entry.trigger, start_col = ctx.start_col, captures = {} }
-        if not entry.condition or entry.condition(ctx, match) then
+        if not seen[entry.trigger] and (not entry.condition or entry.condition(ctx, match)) then
+          seen[entry.trigger] = true
           items[#items + 1] = {
             label = entry.trigger,
             kind = 15,

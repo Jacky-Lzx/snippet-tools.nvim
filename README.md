@@ -234,6 +234,50 @@ for the current filetype and its parents; deleting a collection removes its
 definitions on reload. `s.add(ft, definitions, { key = "project" })` replaces a
 named collection atomically. Omitting `key` replaces the `default` collection.
 
+### Project sources
+
+```lua
+require("snippet_tools.bootstrap").setup({
+  paths = { "~/.config/nvim/snippet-tools" },
+  project = {
+    root = "/path/to/project", -- supplied by the host's trusted project context
+    paths = { ".nvim/snippets" }, -- relative to root; this is also the default
+  },
+})
+```
+
+Project files use the same `all.lua` and `<filetype>.lua` format as global
+collections. Only files applicable to the requested buffer and its filetype
+inheritance are loaded. `project = false` disables the project source. Paths
+are canonicalized, including symlinks and newly named files; switching cwd does
+not change the source root. Project definitions are unavailable in unnamed,
+special, or outside-project buffers, even when another project buffer loaded them.
+
+Project Lua is read with `vim.secure.read()`. New or changed files use Neovim's
+file-content trust flow: view the file, inspect it, run `:trust`, then return to
+the project buffer and run `:SnippetToolsReload`. Untrusted files are skipped
+and are not repeatedly prompted while typing. Revocation or changed untrusted
+contents remove the old collection on reload. Global paths remain trusted user
+configuration and do not prompt.
+
+Explicit priority wins; equal-priority project definitions precede global ones.
+Conditions still apply, so a rejected project match falls back to global
+definitions. The completion adapter deduplicates eligible triggers in that order.
+Named manual collections remain independent of directory-loaded collections.
+
+`:SnippetToolsReload` reloads the current buffer's applicable global/project files,
+parents and `all.lua`, discovers newly created files, and removes deleted files.
+Compilation or validation errors retain the previous good collection and report
+the failing path. Reload never replaces an active editing session or its fields.
+Setup removes sources registered by the previous loader, while preserving manually
+added collections. Sources and their negative lookup results are cached; matching
+does not scan directories or stat files on each keypress.
+
+`:SnippetToolsInspect` adds `sources` (path, root, active scope, trust, load status,
+definition count and error) and `definitions` (origin, priority and current matching
+winner) to the existing session information. Lua `add()` accepts optional `root`
+and `source` metadata; `remove(ft, key)` removes a named collection.
+
 ## completion-tools.nvim
 
 The adapter lives in this plugin. It uses completion-tools' public provider and

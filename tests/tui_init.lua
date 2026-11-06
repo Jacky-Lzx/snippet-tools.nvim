@@ -34,7 +34,28 @@ function _G.snippet_tui_reset(kind)
   vim.bo.filetype, vim.bo.expandtab, vim.bo.shiftwidth = "lua", true, 2
   notifications = {}
   setup()
-  if kind == "mirror" then
+  if kind == "project" then
+    local root = vim.fs.dirname(vim.env.SNIPPET_TUI_STATE) .. "/project"
+    vim.fn.mkdir(root .. "/snippets", "p")
+    vim.fn.mkdir(vim.fn.stdpath("state"), "p")
+    local file = root .. "/snippets/lua.lua"
+    vim.fn.writefile({ "return {{trigger='pj',body='[${1:value}]=${1}$0'}}" }, file)
+    assert(vim.secure.trust({ path = file, action = "allow" }))
+    vim.api.nvim_buf_set_name(0, root .. "/main.lua")
+    s.setup({ project = { root = root, paths = { "snippets" } }, keymap = { ["<Tab>"] = "expand_or_jump" } })
+    s.add("lua", { { trigger = "pj", body = "global:${1:outside}$0" } })
+    vim.keymap.set("i", "<F8>", function()
+      vim.fn.writefile({ "return {{trigger='pj',body='<${1:new}>$0'}}" }, file)
+      assert(vim.secure.trust({ path = file, action = "allow" }))
+      assert(s.reload())
+    end, { buffer = true })
+    _G.snippet_tui_outside = function()
+      s.stop()
+      vim.cmd("enew!")
+      vim.api.nvim_buf_set_name(0, vim.fs.dirname(root) .. "/outside.lua")
+      vim.bo.filetype = "lua"
+    end
+  elseif kind == "mirror" then
     fixture = "hello ${1:world} / $1!$0"
   elseif kind == "region" then
     fixture = "[${1:field}]$0"

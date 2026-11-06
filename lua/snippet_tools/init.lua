@@ -15,8 +15,8 @@ local actions = {
   select_choice = true,
   stop = true,
 }
-local function load(filetype, reload)
-  require("snippet_tools.loader").load(registry.filetypes(filetype), reload)
+local function load(filetype, reload, buf)
+  return require("snippet_tools.loader").load(registry.filetypes(filetype), reload, buf)
 end
 
 local function termcode(key)
@@ -90,6 +90,12 @@ end
 function M.expand_definition(entry, match, options)
   options = vim.tbl_extend("force", {}, options or {})
   local ctx = options.context or M.context()
+  if entry.root then
+    local path = require("snippet_tools.path")
+    if not path.contains(entry.root, path.buffer(ctx.bufnr)) then
+      return false
+    end
+  end
   options.context = ctx
   options.context.match = match
   if match and not options.keep_trigger then
@@ -103,7 +109,7 @@ function M.expand_trigger()
   if not enabled(ctx) then
     return false
   end
-  load(ctx.filetype)
+  load(ctx.filetype, false, ctx.bufnr)
   local entry, match = registry.find(ctx, false)
   if not entry then
     return false
@@ -118,6 +124,7 @@ function M.expand_or_jump()
   return M.jump(1)
 end
 M.add = registry.add
+M.remove = registry.remove
 M.filetype_extend = function(filetype, parents)
   registry.extend(filetype, parents)
   if group then
@@ -127,7 +134,7 @@ end
 M.available = function(ctx)
   ctx = ctx or M.context()
   ctx.selected_text = ctx.selected_text or M.get_selection(ctx.bufnr)
-  load(ctx.filetype)
+  load(ctx.filetype, false, ctx.bufnr)
   return registry.available(ctx)
 end
 M.active = session.active
@@ -137,13 +144,18 @@ M.stop = function()
   return true
 end
 M.reload = function()
-  load(vim.bo.filetype, true)
+  return load(vim.bo.filetype, true)
 end
 M.update = session.update
 M.change_choice = session.change_choice
 M.select_choice = session.select_choice
 M.choices = session.choices
-M.inspect = session.inspect
+M.inspect = function()
+  local result, ctx = session.inspect(), M.context()
+  result.sources = require("snippet_tools.loader").inspect(registry.filetypes(ctx.filetype), ctx.bufnr)
+  result.definitions = registry.explain(ctx)
+  return result
+end
 
 function M._auto()
   auto_pending = false
@@ -155,7 +167,7 @@ function M._auto()
   if not enabled(ctx) then
     return
   end
-  load(ctx.filetype)
+  load(ctx.filetype, false, ctx.bufnr)
   if auto_guard[buf] == ctx.tick then
     return
   end
@@ -228,12 +240,19 @@ function M.setup(options)
   M.dispose()
   config = { auto = options.auto ~= false, keymap = options.keymap or {}, enabled = options.enabled }
   group = vim.api.nvim_create_augroup("SnippetTools", { clear = true })
-  require("snippet_tools.loader").setup(options.paths)
+  require("snippet_tools.loader").setup(options.paths, options.project)
   load(vim.bo.filetype)
   vim.api.nvim_create_autocmd("FileType", {
     group = group,
     callback = function(args)
-      load(vim.bo[args.buf].filetype)
+      load(vim.bo[args.buf].filetype, false, args.buf)
+    end,
+  })
+  vim.api.nvim_create_autocmd({ "BufEnter", "BufFilePost" }, {
+    group = group,
+    callback = function(args)
+      require("snippet_tools.path").invalidate(args.buf)
+      load(vim.bo[args.buf].filetype, false, args.buf)
     end,
   })
   vim.api.nvim_create_user_command("SnippetToolsInspect", function()
@@ -264,6 +283,7 @@ function M.setup(options)
     callback = function(args)
       auto_guard[args.buf] = nil
       selections[args.buf] = nil
+      require("snippet_tools.path").invalidate(args.buf)
     end,
   })
   vim.api.nvim_create_autocmd("InsertCharPre", {
