@@ -195,7 +195,7 @@ function M.dispose()
     group = nil
   end
   for _, name in ipairs({ "SnippetToolsInspect", "SnippetToolsStop", "SnippetToolsReload" }) do
-    pcall(vim.api.nvim_del_user_command, name)
+    pcall(require("snippet_tools.user_command").delete, name)
   end
   for _, map in ipairs(maps) do
     local current = mapping(map.mode, map.key)
@@ -255,11 +255,11 @@ function M.setup(options)
       load(vim.bo[args.buf].filetype, false, args.buf)
     end,
   })
-  vim.api.nvim_create_user_command("SnippetToolsInspect", function()
+  require("snippet_tools.user_command").create("SnippetToolsInspect", function()
     vim.print(M.inspect())
   end, {})
-  vim.api.nvim_create_user_command("SnippetToolsStop", M.stop, {})
-  vim.api.nvim_create_user_command("SnippetToolsReload", M.reload, {})
+  require("snippet_tools.user_command").create("SnippetToolsStop", M.stop, {})
+  require("snippet_tools.user_command").create("SnippetToolsReload", M.reload, {})
   local function highlights()
     vim.api.nvim_set_hl(0, "SnippetToolsPlaceholder", { default = true, link = "Visual" })
     vim.api.nvim_set_hl(0, "SnippetToolsActive", { default = true, link = "IncSearch" })

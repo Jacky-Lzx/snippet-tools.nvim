@@ -447,3 +447,10 @@ and its own SnippetTools commands. `bootstrap.ensure()` explicitly initializes
 once and returns the engine; the `User SnippetToolsReady` event lets completion
 integrations refresh their keymaps. Optional `extends` maps filetypes to parent
 filetypes before setup. Direct `snippet_tools.setup(opts)` remains eager.
+
+## Command ownership
+
+Commands belong to the plugin; choose global entry keys and short aliases in
+your configuration. Registration reports same-name conflicts without replacing
+user commands. Reconfiguration refreshes only commands still owned by this
+plugin, and cleanup preserves subsequent user replacements.
