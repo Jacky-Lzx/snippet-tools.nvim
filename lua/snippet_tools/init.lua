@@ -3,6 +3,7 @@ local registry = require("snippet_tools.registry")
 local session = require("snippet_tools.session")
 local config = { auto = true, keymap = {} }
 local group, maps, auto_pending = nil, {}, false
+local generation = 0
 local auto_guard = {}
 local selections = {}
 local actions = {
@@ -157,7 +158,10 @@ M.inspect = function()
   return result
 end
 
-function M._auto()
+function M._auto(version)
+  if version and version ~= generation then
+    return
+  end
   auto_pending = false
   local buf = vim.api.nvim_get_current_buf()
   if not group or not config.auto or vim.api.nvim_get_mode().mode ~= "i" or not vim.bo.modifiable then
@@ -189,7 +193,16 @@ local function mapping(mode, key)
   end
 end
 function M.dispose()
+  generation = generation + 1
   session.dispose()
+  local loader = package.loaded["snippet_tools.loader"]
+  if loader then
+    loader.dispose()
+  end
+  local display = package.loaded["snippet_tools.display"]
+  if display then
+    display.configure()
+  end
   if group then
     vim.api.nvim_del_augroup_by_id(group)
     group = nil
@@ -212,9 +225,12 @@ function M.dispose()
   end
   maps, auto_guard, selections = {}, {}, {}
   auto_pending = false
+  config = { auto = true, keymap = {} }
 end
 
 function M.setup(options)
+  assert(options == nil or type(options) == "table", "snippet-tools.nvim: setup expects a table")
+  options = vim.deepcopy(options or {})
   options = options or {}
   assert(vim.fn.has("nvim-0.11") == 1, "snippet-tools requires Neovim 0.11+")
   assert(options.auto == nil or type(options.auto) == "boolean", "snippet-tools: auto must be boolean")
@@ -236,11 +252,14 @@ function M.setup(options)
       "snippet-tools: invalid keymap action " .. tostring(action)
     )
   end
-  require("snippet_tools.display").configure(options.ext_opts)
+  local loader = require("snippet_tools.loader")
+  local prepared = loader.prepare(options.paths, options.project)
+  require("snippet_tools.display").resolve(options.ext_opts)
   M.dispose()
+  require("snippet_tools.display").configure(options.ext_opts)
   config = { auto = options.auto ~= false, keymap = options.keymap or {}, enabled = options.enabled }
   group = vim.api.nvim_create_augroup("SnippetTools", { clear = true })
-  require("snippet_tools.loader").setup(options.paths, options.project)
+  loader.apply(prepared)
   load(vim.bo.filetype)
   vim.api.nvim_create_autocmd("FileType", {
     group = group,
@@ -291,7 +310,7 @@ function M.setup(options)
     callback = function()
       if config.auto and not auto_pending and registry.has_auto(vim.bo.filetype) then
         auto_pending = true
-        feed("<Cmd>lua require('snippet_tools')._auto()<CR>")
+        feed("<Cmd>lua require('snippet_tools')._auto(" .. generation .. ")<CR>")
       end
     end,
   })

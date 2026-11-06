@@ -36,7 +36,7 @@ local function node_style(passive, active, opts)
   }
 end
 
-function M.configure(options)
+function M.resolve(options)
   assert(options == nil or type(options) == "table", "snippet-tools: ext_opts must be a table")
   options = vim.deepcopy(options or {})
   for kind, states in pairs(options) do
@@ -79,12 +79,16 @@ function M.configure(options)
     end
   end
   next_styles.exit = node_style(next_styles.insert.passive, next_styles.insert.active, options.exit)
-  styles = next_styles
+  return next_styles
 end
 
 function M.options(kind, active)
   local style = styles[kind]
   return style and style[active and "active" or "passive"] or { priority = 120 }
+end
+
+function M.configure(options)
+  styles = M.resolve(options)
 end
 
 M.configure()

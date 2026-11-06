@@ -13,7 +13,7 @@ local function directories(value, label)
   return value
 end
 
-function M.setup(global_paths, project)
+function M.prepare(global_paths, project)
   local next_sources, seen = {}, {}
   local function add(directory, root)
     local absolute = path.normalize(directory)
@@ -35,6 +35,10 @@ function M.setup(global_paths, project)
       add(expanded:match("^/") and expanded or root .. "/" .. expanded, root)
     end
   end
+  return next_sources
+end
+
+function M.apply(next_sources)
   for _, source in ipairs(sources) do
     for ft, state in pairs(source.files) do
       require("snippet_tools.registry").remove(ft, state.key)
@@ -42,6 +46,14 @@ function M.setup(global_paths, project)
   end
   sources = next_sources
   path.invalidate()
+end
+
+function M.setup(global_paths, project)
+  M.apply(M.prepare(global_paths, project))
+end
+
+function M.dispose()
+  M.apply({})
 end
 
 local function active(source, buf)
