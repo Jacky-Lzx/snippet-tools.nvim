@@ -1,0 +1,251 @@
+{
+  "version": 1,
+  "default": [
+    "unit",
+    "ui"
+  ],
+  "defaults": {},
+  "cases": [
+    {
+      "name": "runner-contracts",
+      "suite": "unit",
+      "command": [
+        "{python}",
+        "tests/runner_checks.py"
+      ],
+      "files": [
+        "tests/runner_checks.py"
+      ],
+      "timeout": 120
+    },
+    {
+      "name": "setup_contract",
+      "suite": "unit",
+      "command": [
+        "{nvim}",
+        "--headless",
+        "-u",
+        "NONE",
+        "-i",
+        "NONE",
+        "--noplugin",
+        "-l",
+        "tests/setup_contract.lua"
+      ],
+      "files": [
+        "tests/setup_contract.lua"
+      ],
+      "timeout": 90
+    },
+    {
+      "name": "command_ownership",
+      "suite": "unit",
+      "command": [
+        "{nvim}",
+        "--headless",
+        "-u",
+        "NONE",
+        "-i",
+        "NONE",
+        "--noplugin",
+        "-l",
+        "tests/command_ownership.lua"
+      ],
+      "files": [
+        "tests/command_ownership.lua"
+      ],
+      "timeout": 90
+    },
+    {
+      "name": "bootstrap",
+      "suite": "unit",
+      "command": [
+        "{nvim}",
+        "--headless",
+        "-u",
+        "tests/minimal_init.lua",
+        "-i",
+        "NONE",
+        "-n",
+        "-l",
+        "tests/bootstrap.lua"
+      ],
+      "files": [
+        "tests/minimal_init.lua",
+        "tests/bootstrap.lua"
+      ],
+      "timeout": 90
+    },
+    {
+      "name": "core",
+      "suite": "unit",
+      "command": [
+        "{nvim}",
+        "--headless",
+        "-u",
+        "tests/minimal_init.lua",
+        "-i",
+        "NONE",
+        "-n",
+        "-l",
+        "tests/core.lua"
+      ],
+      "files": [
+        "tests/minimal_init.lua",
+        "tests/core.lua"
+      ],
+      "timeout": 90
+    },
+    {
+      "name": "fmt",
+      "suite": "unit",
+      "command": [
+        "{nvim}",
+        "--headless",
+        "-u",
+        "tests/minimal_init.lua",
+        "-i",
+        "NONE",
+        "-n",
+        "-l",
+        "tests/fmt.lua"
+      ],
+      "files": [
+        "tests/minimal_init.lua",
+        "tests/fmt.lua"
+      ],
+      "timeout": 90
+    },
+    {
+      "name": "registry",
+      "suite": "unit",
+      "command": [
+        "{nvim}",
+        "--headless",
+        "-u",
+        "tests/minimal_init.lua",
+        "-i",
+        "NONE",
+        "-n",
+        "-l",
+        "tests/registry.lua"
+      ],
+      "files": [
+        "tests/minimal_init.lua",
+        "tests/registry.lua"
+      ],
+      "timeout": 90
+    },
+    {
+      "name": "projects",
+      "suite": "unit",
+      "command": [
+        "{nvim}",
+        "--headless",
+        "-u",
+        "tests/minimal_init.lua",
+        "-i",
+        "NONE",
+        "-n",
+        "-l",
+        "tests/projects.lua"
+      ],
+      "files": [
+        "tests/minimal_init.lua",
+        "tests/projects.lua"
+      ],
+      "timeout": 90
+    },
+    {
+      "name": "input",
+      "suite": "unit",
+      "command": [
+        "{nvim}",
+        "--headless",
+        "-u",
+        "tests/minimal_init.lua",
+        "-i",
+        "NONE",
+        "-n",
+        "-l",
+        "tests/input.lua"
+      ],
+      "files": [
+        "tests/minimal_init.lua",
+        "tests/input.lua"
+      ],
+      "timeout": 90
+    },
+    {
+      "name": "tui",
+      "suite": "ui",
+      "command": [
+        "{python}",
+        "tests/tui.py"
+      ],
+      "files": [
+        "tests/tui.py"
+      ],
+      "timeout": 120
+    },
+    {
+      "name": "completion-input",
+      "suite": "integration",
+      "command": [
+        "{nvim}",
+        "--headless",
+        "-u",
+        "tests/minimal_init.lua",
+        "-i",
+        "NONE",
+        "-n",
+        "-l",
+        "tests/input.lua"
+      ],
+      "files": [
+        "tests/minimal_init.lua",
+        "tests/input.lua"
+      ],
+      "timeout": 90,
+      "env": {
+        "COMPLETION_TOOLS_PATH": "{root}/../completion-tools.nvim"
+      },
+      "requires": [
+        "path:{root}/../completion-tools.nvim/lua/completion_tools/init.lua"
+      ]
+    },
+    {
+      "name": "completion-tui",
+      "suite": "integration",
+      "command": [
+        "{python}",
+        "tests/tui.py"
+      ],
+      "files": [
+        "tests/tui.py"
+      ],
+      "timeout": 120,
+      "env": {
+        "COMPLETION_TOOLS_PATH": "{root}/../completion-tools.nvim"
+      },
+      "requires": [
+        "path:{root}/../completion-tools.nvim/lua/completion_tools/init.lua"
+      ]
+    }
+  ],
+  "support": {
+    "tests/tui_init.lua": "Loaded by tests/tui.py",
+    "tests/run.sh": "Stable shell entry point for tests/run.py"
+  },
+  "manual": {
+    "tests/bench.sh": "Explicit fixture installation, benchmark or manual acceptance tool; see testing documentation",
+    "tests/bench.lua": "Explicit fixture installation, benchmark or manual acceptance tool; see testing documentation"
+  },
+  "fixtures": {
+    "completion-tools.nvim": {
+      "repository": "Jacky-Lzx/completion-tools.nvim",
+      "revision": "1e8c04216a6952295cad5c3514da2c85e119bbe7",
+      "path": "{root}/../completion-tools.nvim"
+    }
+  }
+}

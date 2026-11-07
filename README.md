@@ -424,8 +424,8 @@ collections need migration to this plugin's definitions.
 
 ```sh
 sh tests/run.sh
-COMPLETION_TOOLS_PATH=../completion-tools.nvim sh tests/run.sh
-NVIM=/path/to/nvim sh tests/run.sh
+sh tests/run.sh integration
+NVIM_BIN=/path/to/nvim sh tests/run.sh
 sh tests/bench.sh
 stylua --check lua tests examples
 ```
@@ -473,3 +473,5 @@ Health reports actionable failures and a compact result for applicable checks. D
 optional and not-yet-activated features do not warn solely because they are inactive.
 Inspection does not configure plugins, start services or install dependencies.
 Use `:SnippetToolsInfo` for detailed configuration and runtime information.
+
+[Test workflow](tests/README.md): registered suites, filtering, required fixtures and retained failure evidence.

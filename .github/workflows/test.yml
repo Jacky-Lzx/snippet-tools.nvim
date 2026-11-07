@@ -19,4 +19,28 @@ jobs:
           tar -xzf "$RUNNER_TEMP/nvim.tar.gz" -C "$RUNNER_TEMP"
           echo "$RUNNER_TEMP/nvim-linux-x86_64/bin" >> "$GITHUB_PATH"
       - run: nvim --version
-      - run: sh tests/run.sh
+      - run: sh tests/run.sh --output "$RUNNER_TEMP/test-results"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results-${{ strategy.job-index }}
+          path: ${{ runner.temp }}/test-results
+          if-no-files-found: ignore
+
+  integration:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: rhysd/action-setup-vim@v1
+        with:
+          version: v0.12.6
+          neovim: true
+      - run: python3 tests/run.py fixtures
+      - run: sh tests/run.sh integration --locked --output "$RUNNER_TEMP/integration-results"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: integration
+          path: ${{ runner.temp }}/integration-results
+          if-no-files-found: ignore
