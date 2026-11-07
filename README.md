@@ -273,7 +273,7 @@ Setup removes sources registered by the previous loader, while preserving manual
 added collections. Sources and their negative lookup results are cached; matching
 does not scan directories or stat files on each keypress.
 
-`:SnippetToolsInspect` adds `sources` (path, root, active scope, trust, load status,
+`:SnippetToolsInfo` adds `sources` (path, root, active scope, trust, load status,
 definition count and error) and `definitions` (origin, priority and current matching
 winner) to the existing session information. Lua `add()` accepts optional `root`
 and `source` metadata; `remove(ft, key)` removes a named collection.
@@ -336,7 +336,7 @@ While a field is selected, window folding is temporarily suspended so an
 asynchronous fold cannot widen the replacement range. The previous folding
 setting is restored when selection ends or the session stops.
 
-`:SnippetToolsInspect`, `:SnippetToolsStop`, `:SnippetToolsReload` and
+`:SnippetToolsInfo`, `:SnippetToolsStop`, `:SnippetToolsReload` and
 `:checkhealth snippet_tools` are available after setup.
 Highlights are `SnippetToolsPlaceholder` and `SnippetToolsActive`.
 The `User` events `SnippetToolsExpand` and `SnippetToolsEnter` expose expansion
@@ -466,3 +466,10 @@ disposing a working session. `dispose()` closes sessions, removes owned mappings
 autocommands/commands and file-loaded definitions, resets setup options, and
 invalidates queued automatic expansion. User-registered definitions remain. It
 is safe to repeat; setup can initialize again from defaults.
+
+## Health and inspection
+
+Health reports actionable failures and a compact result for applicable checks. Disabled,
+optional and not-yet-activated features do not warn solely because they are inactive.
+Inspection does not configure plugins, start services or install dependencies.
+Use `:SnippetToolsInfo` for detailed configuration and runtime information.

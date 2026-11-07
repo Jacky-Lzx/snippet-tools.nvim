@@ -207,7 +207,7 @@ function M.dispose()
     vim.api.nvim_del_augroup_by_id(group)
     group = nil
   end
-  for _, name in ipairs({ "SnippetToolsInspect", "SnippetToolsStop", "SnippetToolsReload" }) do
+  for _, name in ipairs({ "SnippetToolsInfo", "SnippetToolsStop", "SnippetToolsReload" }) do
     pcall(require("snippet_tools.user_command").delete, name)
   end
   for _, map in ipairs(maps) do
@@ -274,7 +274,7 @@ function M.setup(options)
       load(vim.bo[args.buf].filetype, false, args.buf)
     end,
   })
-  require("snippet_tools.user_command").create("SnippetToolsInspect", function()
+  require("snippet_tools.user_command").create("SnippetToolsInfo", function()
     vim.print(M.inspect())
   end, {})
   require("snippet_tools.user_command").create("SnippetToolsStop", M.stop, {})

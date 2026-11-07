@@ -115,7 +115,7 @@ also check the cursor directly, before deferred cursor events run.
 
 COMMANDS                                              *snippet-tools-commands*
 
-:SnippetToolsInspect   Show the current session's state and live node counts.
+:SnippetToolsInfo   Show the current session's state and live node counts.
 :SnippetToolsStop      End the current buffer's snippet sessions.
 :SnippetToolsReload    Reload current/inherited collections, removing deleted files.
 :checkhealth snippet_tools
