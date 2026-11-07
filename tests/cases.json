@@ -235,7 +235,8 @@
   ],
   "support": {
     "tests/tui_init.lua": "Loaded by tests/tui.py",
-    "tests/run.sh": "Stable shell entry point for tests/run.py"
+    "tests/run.sh": "Stable shell entry point for tests/run.py",
+    "tests/trust.lua": "Trust generated fixtures through the buffer API supported by all tested Neovim versions"
   },
   "manual": {
     "tests/bench.sh": "Explicit fixture installation, benchmark or manual acceptance tool; see testing documentation",

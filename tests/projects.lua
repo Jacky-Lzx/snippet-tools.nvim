@@ -1,3 +1,4 @@
+local trust_file = dofile("tests/trust.lua")
 local s = require("snippet_tools")
 local registry = require("snippet_tools.registry")
 local loader = require("snippet_tools.loader")
@@ -20,7 +21,7 @@ end
 local function write(file, text, trust)
   vim.fn.writefile(vim.split(text, "\n"), file)
   if trust then
-    assert(vim.secure.trust({ path = file, action = "allow" }))
+    trust_file(file)
   end
 end
 local function buffer(file, ft)
@@ -85,7 +86,7 @@ case("untrusted project Lua stays unexecuted and is not prompted on every input"
 end)
 
 case("trusted project entries win ties while priority and conditions retain global fallback", function()
-  assert(vim.secure.trust({ path = definitions, action = "allow" }))
+  trust_file(definitions)
   assert(s.reload())
   assert(find("same").root == project and _G.project_executions == 1)
   assert(find("higher").root == nil and find("fallback").root == nil)

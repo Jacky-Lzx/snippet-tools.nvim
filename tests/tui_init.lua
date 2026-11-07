@@ -7,6 +7,7 @@ vim.o.ttimeoutlen = 30
 vim.bo.expandtab = true
 vim.bo.shiftwidth = 2
 vim.bo.filetype = "lua"
+local trust_file = dofile("tests/trust.lua")
 local s = require("snippet_tools")
 local notifications = {}
 vim.notify = function(message, level)
@@ -40,13 +41,13 @@ function _G.snippet_tui_reset(kind)
     vim.fn.mkdir(vim.fn.stdpath("state"), "p")
     local file = root .. "/snippets/lua.lua"
     vim.fn.writefile({ "return {{trigger='pj',body='[${1:value}]=${1}$0'}}" }, file)
-    assert(vim.secure.trust({ path = file, action = "allow" }))
+    trust_file(file)
     vim.api.nvim_buf_set_name(0, root .. "/main.lua")
     s.setup({ project = { root = root, paths = { "snippets" } }, keymap = { ["<Tab>"] = "expand_or_jump" } })
     s.add("lua", { { trigger = "pj", body = "global:${1:outside}$0" } })
     vim.keymap.set("i", "<F8>", function()
       vim.fn.writefile({ "return {{trigger='pj',body='<${1:new}>$0'}}" }, file)
-      assert(vim.secure.trust({ path = file, action = "allow" }))
+      trust_file(file)
       assert(s.reload())
     end, { buffer = true })
     _G.snippet_tui_outside = function()
