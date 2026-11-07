@@ -275,7 +275,11 @@ function M.setup(options)
     end,
   })
   require("snippet_tools.user_command").create("SnippetToolsInfo", function()
-    vim.print(M.inspect())
+    vim.notify(
+      vim.inspect(M.inspect()),
+      vim.log.levels.INFO,
+      { title = "snippet-tools.nvim", filetype = "lua" }
+    )
   end, {})
   require("snippet_tools.user_command").create("SnippetToolsStop", M.stop, {})
   require("snippet_tools.user_command").create("SnippetToolsReload", M.reload, {})
